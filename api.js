@@ -5,6 +5,45 @@ import semver from 'semver' // Use the actual semver library
 // Global registry for all APIs, simplified to manage API instances by name and version
 let globalRegistry = new Map() // Changed to 'let' so it can be reassigned for testing
 
+// --- Proxy Handler for API Instance Access (Layer 2) ---
+// This enables calls like Api.resources.users.createUser() or Api.resources.users.version('1.0.0').beforeOperation()
+const ApiInstanceProxyHandler = {
+  get(targetApiInstance, prop) {
+    // Handle version selection first
+    if (prop === 'version') {
+      return (range = 'latest') => {
+        const specificApi = Api.registry.get(targetApiInstance.options.name, range)
+        if (!specificApi) {
+          console.warn(`API '${targetApiInstance.options.name}' version '${range}' not found.`)
+          return null
+        }
+        // Return a new proxy for the specific version
+        return new Proxy(specificApi, ApiInstanceProxyHandler)
+      }
+    }
+
+    // Handle implemented methods
+    if (targetApiInstance.implementers.has(prop)) {
+      return async (context = {}) => {
+        // Automatically execute the implemented method
+        return await targetApiInstance.execute(prop, context)
+      }
+    }
+
+    // Handle hooks (allowing direct execution of hooks like Api.resources.users.beforeOperation())
+    // This allows manually triggering hooks for testing or specific scenarios
+    if (targetApiInstance.hooks.has(prop)) {
+      return async (context = {}) => {
+        // Automatically execute the hook chain for this name
+        return await targetApiInstance.executeHook(prop, context)
+      }
+    }
+
+    // Fallback to original properties of the Api instance (e.g., options, hooks map, implementers map)
+    return targetApiInstance[prop]
+  }
+}
+
 /**
  * Core API class providing versioning, hook, and implementation systems.
  */
@@ -14,10 +53,12 @@ export class Api {
     this.options = {
       name: null,
       version: null,
+      hooks: {}, // Initialize hooks property for constructor
       ...options
     }
 
     // Hook system: Map<hookName, Array<{ handler: Function, pluginName: string, functionName: string }>>
+    // This now exclusively holds hooks specific to THIS Api instance
     this.hooks = new Map()
 
     // Storage for different implementations
@@ -25,6 +66,58 @@ export class Api {
 
     // To track installed plugins: Set<pluginName>
     this._installedPlugins = new Set() // Stores just the names of installed plugins
+
+    // Process hooks defined in the constructor options
+    if (this.options.hooks && typeof this.options.hooks === 'object') {
+      for (const hookName in this.options.hooks) {
+        if (Object.prototype.hasOwnProperty.call(this.options.hooks, hookName)) {
+          const hookDefinition = this.options.hooks[hookName]
+
+          let originalHandler
+          let functionName
+          let params = {}
+
+          // Determine syntax: function or object
+          if (typeof hookDefinition === 'function') {
+            originalHandler = hookDefinition
+            functionName = hookName // Use the hook key as functionName
+          } else if (typeof hookDefinition === 'object' && hookDefinition !== null) {
+            // Detailed syntax: { functionName, params, handler }
+            if (typeof hookDefinition.handler !== 'function') {
+              throw new Error(`Constructor hook '${hookName}' for API '${this.options.name}' must have a 'handler' function.`)
+            }
+            originalHandler = hookDefinition.handler
+            functionName = hookDefinition.functionName || hookName // Use explicit functionName or hookKey
+            params = { ...hookDefinition } // Copy all properties as params
+            delete params.handler // Remove handler from params
+            delete params.functionName // Remove functionName from params
+          } else {
+            throw new Error(`Constructor hook '${hookName}' for API '${this.options.name}' has an invalid definition type.`)
+          }
+
+          // Create the wrapping function for constructor-defined hooks
+          // This wrapper enforces the "ONLY run for this instance" rule
+          const registeredResourceName = this.options.name // Capture the API's name (e.g., 'projects')
+          const wrappedHandler = async (context) => {
+            // Check if this hook should run for the current ApiInstance executing it
+            // 'core' hooks are always meant to run, regardless of instance name.
+            if (context.apiInstance && (context.apiInstance.options.name === registeredResourceName || registeredResourceName === 'core')) {
+              return await originalHandler(context)
+            }
+            // If the instance name doesn't match, or it's not a 'core' hook, do nothing.
+            return undefined // Return undefined to not interfere with chain if not running
+          }
+          // Attach original metadata for debugging if needed, but not used by executeHook
+          wrappedHandler._originalHandler = originalHandler
+          wrappedHandler._wrappedForResource = registeredResourceName
+
+          // Register this wrapped handler with the instance's hook map
+          // The pluginName for these is the API's own name (its resource name)
+          // The params here are used by hook() for ordering.
+          this.hook(hookName, this.options.name, functionName, params, wrappedHandler)
+        }
+      }
+    }
 
     // Auto-register if name and version provided
     if (this.options.name && this.options.version) {
@@ -44,7 +137,6 @@ export class Api {
     }
 
     if (!semver.valid(version)) { // Use actual semver
-        debugger
       throw new Error(`Invalid version format: ${version}`)
     }
 
@@ -176,6 +268,25 @@ export class Api {
     }
   }
 
+  // --- Static Proxy for Seamless API Resource Access (Layer 1) ---
+  // This enables calls like Api.resources.users.createUser()
+  static resources = new Proxy({}, {
+    get(target, resourceName) {
+      if (typeof resourceName !== 'string') {
+        return target[resourceName] // Fallback for non-string properties like 'Symbol' or built-ins
+      }
+
+      const apiInstance = Api.registry.get(resourceName, 'latest') // Get the latest version by default
+      if (!apiInstance) {
+        console.warn(`API resource '${resourceName}' not found in registry.`)
+        return undefined // Return undefined if the API is not registered
+      }
+
+      // Return a proxy for the specific API instance
+      return new Proxy(apiInstance, ApiInstanceProxyHandler)
+    }
+  })
+
   /**
    * Register a hook handler for a specific hook name.
    * Handlers are placed based on 'beforePlugin'/'afterPlugin' or 'beforeFunction'/'afterFunction' parameters,
@@ -191,6 +302,10 @@ export class Api {
    * @param {Function} handler - The asynchronous function to be executed when the hook runs.
    * @returns {Api} The API instance for chaining.
    * @throws {Error} If pluginName/functionName are invalid, handler is not a function, or placement target is not found/conflicting.
+   *
+   * Note: Handlers provided here are NOT wrapped by `Api` itself for conditional execution.
+   * If conditional execution (e.g., only for a specific resource name) is desired,
+   * the handler function itself must implement that logic (as seen with constructor hooks).
    */
   hook(hookName, pluginName, functionName, params = {}, handler) {
     if (typeof pluginName !== 'string' || pluginName.trim() === '') {
@@ -288,7 +403,8 @@ export class Api {
   async executeHook(name, context) {
     const handlers = this.hooks.get(name) || []
     for (const { handler, pluginName, functionName } of handlers) {
-      const result = await handler(context) // Await handler for async support
+      // FIX: Pass the current API instance as part of the context for wrapped handlers to use
+      const result = await handler({ ...context, apiInstance: this }) // Pass apiInstance to context
       if (result === false) {
         console.log(`Hook '${name}' handler from plugin '${pluginName}' (function: '${functionName}') stopped the chain.`)
         break
@@ -336,7 +452,7 @@ export class Api {
    * @param {Function} plugin.install - The function to call to install the plugin.
    * @param {Object} [options={}] - Options to pass to the plugin's install function.
    * @returns {Api} The API instance for chaining.
-   * @throws {Error} If the plugin is invalid, already installed, or its dependencies are not met.
+   * @throws {Error} If the plugin is invalid, already installed, or its dependencies are met.
    *
    * Note: The plugin's 'install' function will now receive its own name as a third argument,
    * which it should then pass to any 'apiInstance.hook()' calls it makes, along with the

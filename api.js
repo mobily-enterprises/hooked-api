@@ -18,11 +18,9 @@ const ResourceProxyHandler = {
     // Handle implemented methods (e.g., .createUser())
     // The method is implemented on the Api instance, but operates in the context of this resource.
     if (apiInstance.implementers.has(prop)) {
-      return async (context = {}) => {
-        // Inject resourceName directly into the context passed to execute, and then clean up.
-        // This ensures the original context object can be mutated throughout the chain.
+      return async (context = {}) => { // context here is the object passed by the caller (e.g., { data: { name: 'Jane' } })
         context.resourceName = resourceName; // Add resourceName to the context object
-        const result = await apiInstance.execute(prop, context);
+        const result = await apiInstance.execute(prop, context); // Pass the original context to execute
         delete context.resourceName; // Clean up the resourceName property from the context
         return result;
       };
@@ -201,7 +199,7 @@ export class Api {
           functionName = hookDefinition.functionName || hookName
           params = { ...hookDefinition }
           delete params.handler
-          delete params.functionName
+            delete params.functionName
         } else {
           throw new Error(`Resource hook '${hookName}' for resource '${name}' on API '${this.options.name}' has an invalid definition type.`)
         }

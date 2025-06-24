@@ -64,15 +64,28 @@ const ResourceProxyHandler = {
     // These are methods defined only on this resource.
     if (resourceConfig && resourceConfig.implementers && resourceConfig.implementers.has(prop)) {
       const resourceSpecificHandler = resourceConfig.implementers.get(prop);
-      // We wrap the handler in an async function to provide a consistent execution context.
-      // This handler is executed directly as it's not part of the main API's `execute` flow.
+      // Resource-specific implementers use the new signature
       return async (context = {}) => {
-        context.resourceName = resourceName;
-        context.apiInstance = apiInstance; // Add apiInstance to context for consistency.
-        const result = await resourceSpecificHandler(context);
-        delete context.apiInstance; // Clean up context to prevent side effects.
-        delete context.resourceName;
-        return result;
+        // Build the config object with all metadata
+        const config = {
+          method: prop,
+          resourceName: resourceName,
+          apiOptions: apiInstance.options,
+          resourceOptions: resourceConfig.options,
+          apiConstants: apiInstance.constants,
+          resourceConstants: resourceConfig.constants
+        };
+        
+        // Build the api object with operational capabilities
+        const api = {
+          resources: apiInstance.instanceResources,
+          executeHook: (name, ctx) => apiInstance.executeHook(name, ctx),
+          constants: apiInstance.constants,
+          options: apiInstance.options
+        };
+        
+        // Call handler with new signature: { context, config, api }
+        return await resourceSpecificHandler({ context, config, api });
       };
     }
 
@@ -85,12 +98,9 @@ const ResourceProxyHandler = {
     // Priority 4: Fallback to the general, API-level implementer.
     // This is the last check for a shared method on the API instance itself.
     if (apiInstance.implementers.has(prop)) {
-      // We wrap this call to ensure the context is set correctly before calling the main execute method.
-      return async (context = {}) => { // context here is the object passed by the caller (e.g., { data: { name: 'Jane' } })
-        context.resourceName = resourceName; // Add resourceName to the context object
-        const result = await apiInstance.execute(prop, context); // Use the central `execute` for consistency.
-        delete context.resourceName; // Clean up the resourceName property from the context
-        return result;
+      // Return a function that calls the internal execute method with resource info
+      return async (context = {}) => {
+        return await apiInstance._executeWithResource(prop, context, resourceName);
       };
     }
 
@@ -199,7 +209,10 @@ export class Api {
           }
 
           // These hooks are API-wide, so their handler doesn't need a resource-specific check.
+          // CLAUDE: Document here what this function (originalHandler) will get in context. It gets the
+          // hook definition
           const wrappedHandler = async (context) => await originalHandler(context)
+
           this.hook(hookName, `api:${this.options.name}`, functionName, params, wrappedHandler)
         }
       }
@@ -228,9 +241,29 @@ export class Api {
     this.register()
 
     /**
-     * A convenient proxy for accessing resources attached to *this specific* API instance.
-     * For example: `myApi.instanceResources.users.create()`. This avoids having to use the
-     * global `Api.resources` and ensures you are interacting with the intended instance.
+     * VERSIONING SAFETY: Instance-Specific Resource Access
+     * ====================================================
+     * This proxy is crucial for maintaining version consistency within an API.
+     * 
+     * Purpose:
+     * While Api.resources provides global access (defaulting to latest version),
+     * instanceResources ensures you ALWAYS work with the current instance's version.
+     * 
+     * Use cases:
+     * 1. Inside implementers - Access other resources from the SAME API version:
+     *    async function myImplementer(context, options) {
+     *      const api = options.apiInstance;
+     *      // This ensures v1 implementers use v1 resources, v2 uses v2, etc.
+     *      const users = await api.instanceResources.users.list();
+     *    }
+     * 
+     * 2. External code that needs version-specific behavior:
+     *    const crmV1 = Api.registry.get('CRM_API', '1.0.0');
+     *    await crmV1.instanceResources.users.create(); // Guaranteed v1.0.0
+     * 
+     * This design prevents accidental version mixing and ensures consistent behavior
+     * within each API version's ecosystem.
+     * 
      * @type {Proxy}
      */
     this.instanceResources = new Proxy({}, {
@@ -285,13 +318,33 @@ export class Api {
       throw new Error(`Resource '${name}' already exists on API '${this.options.name}'.`);
     }
 
-    // To prevent confusion, a resource name must be unique across DIFFERENT APIs.
-    // However, different versions of the SAME API are allowed to share a resource name.
+    // VERSIONING CONSTRAINT: Resource Name Global Uniqueness
+    // ======================================================
+    // This is a critical design decision that ensures clarity in the entire system.
+    // 
+    // Rule: A resource name (e.g., 'users') must be globally unique across DIFFERENT APIs,
+    // but CAN be reused across different versions of the SAME API.
+    //
+    // Examples:
+    // ✅ ALLOWED: CRM_API v1.0.0 has 'users', CRM_API v2.0.0 also has 'users'
+    // ❌ FORBIDDEN: CRM_API has 'users', BILLING_API wants 'users' too
+    //
+    // Why this design?
+    // 1. When calling Api.resources.users.create(), there's zero ambiguity about which API owns 'users'
+    // 2. Different versions of the same API can evolve while maintaining the same resource interface
+    // 3. Forces meaningful resource naming: 'billing_accounts' vs generic 'accounts'
+    // 4. Prevents microservice confusion where multiple services claim the same resource
+    //
+    // How it works with the version system:
+    // - Api.resources.users.create() will automatically pick the LATEST version of CRM_API
+    // - Api.resources.version('1.0.0').users.create() explicitly uses CRM_API v1.0.0
+    // - Inside implementers, instanceResources ensures version consistency
     for (const [registeredApiName, versionsMap] of globalRegistry.entries()) {
+        // Only check APIs with DIFFERENT names (not different versions of the same API)
         if (registeredApiName !== this.options.name) {
             for (const otherApiInstance of versionsMap.values()) {
                 if (otherApiInstance._resources.has(name)) {
-                    throw new Error(`Resource name '${name}' is already used by API '${registeredApiName}' version '${otherApiInstance.options.version}'. Resource names must be globally unique.`);
+                    throw new Error(`Resource name '${name}' is already used by API '${registeredApiName}' version '${otherApiInstance.options.version}'. Resource names must be globally unique across different APIs.`);
                 }
             }
         }
@@ -477,8 +530,29 @@ export class Api {
   }
 
   /**
-   * Internal helper to find an API instance that contains a given resource.
-   * This is critical for the `Api.resources` proxy to function.
+   * VERSIONING MECHANISM: Resource Lookup Across API Versions
+   * =========================================================
+   * This method is the heart of the version resolution system when using Api.resources.
+   * 
+   * How it works:
+   * 1. GATHER: Finds ALL API instances that have the requested resource
+   *    - Due to our uniqueness constraint, all instances will be from the SAME API name
+   *    - Example: If looking for 'users', might find CRM_API v1.0.0, v1.5.0, v2.0.0
+   * 
+   * 2. FILTER: Apply version constraints if specified
+   *    - 'latest' (default): Keep all candidates for final selection
+   *    - Specific version (e.g., '1.0.0'): Find >= this version
+   *    - Version range (e.g., '^1.0.0'): Find all matching the semver range
+   * 
+   * 3. SELECT: Return the HIGHEST version that matches
+   *    - This ensures Api.resources.users defaults to the newest implementation
+   *    - But Api.resources.version('^1.0.0').users respects version constraints
+   * 
+   * Why this design?
+   * - Encourages using latest features by default
+   * - Allows explicit version pinning when needed for compatibility
+   * - Works seamlessly with the global uniqueness constraint
+   * 
    * @param {string} resourceName - The name of the resource to find.
    * @param {string} [versionRange='latest'] - An optional semver range for the API version.
    * @returns {Api|null} The highest-versioned matching API instance, or null.
@@ -488,6 +562,7 @@ static _findApiInstanceByResourceName(resourceName, versionRange = 'latest') {
     let candidates = [];
     // 1. GATHER: Go through all registered APIs and create a list of every single
     // instance that has the resource we're looking for.
+    // Due to our uniqueness constraint, these will all be from the same API name!
     for (const versionsMap of globalRegistry.values()) {
         for (const apiInstance of versionsMap.values()) {
             if (apiInstance._resources && apiInstance._resources.has(resourceName)) {
@@ -512,19 +587,42 @@ static _findApiInstanceByResourceName(resourceName, versionRange = 'latest') {
     }
 
     // 3. SELECT: Sort the final, filtered list by version and return the highest one.
+    // This is why Api.resources.users.create() always gets the latest version!
     filteredCandidates.sort((a, b) => semver.rcompare(a.options.version, b.options.version));
 
     return filteredCandidates[0];
 }
 
   /**
-   * A static, global entry point for accessing any resource on any registered API.
-   * This provides extreme convenience, allowing code to access resources without needing
-   * a direct reference to the API instance it lives on.
-   *
-   * Usage:
-   * `Api.resources.users.create(...)` - Finds the latest API with a 'users' resource.
-   * `Api.resources.version('^1.0.0').users.create(...)` - Finds the latest v1 API.
+   * VERSIONING INTERFACE: Global Resource Access with Version Control
+   * ================================================================
+   * This static proxy is the primary interface for accessing resources across all APIs.
+   * It leverages our versioning constraints to provide an intuitive, unambiguous API.
+   * 
+   * Core behaviors:
+   * 1. DEFAULT TO LATEST: Api.resources.users.create() uses the highest version
+   *    - Encourages adoption of new features
+   *    - Matches most developers' expectations
+   * 
+   * 2. EXPLICIT VERSION CONTROL: Api.resources.version('^1.0.0').users.create()
+   *    - Allows pinning to specific versions or ranges
+   *    - Essential for backward compatibility
+   * 
+   * 3. GLOBAL UNIQUENESS BENEFIT: Since 'users' can only belong to one API name,
+   *    there's never ambiguity about WHICH API you're calling, only which VERSION
+   * 
+   * Examples with our versioning system:
+   * - Given: CRM_API v1.0.0, v1.5.0, v2.0.0 all have 'users' resource
+   * - Api.resources.users.get() → uses CRM_API v2.0.0 (latest)
+   * - Api.resources.version('1.0.0').users.get() → uses CRM_API v1.5.0 (>= 1.0.0)
+   * - Api.resources.version('^1.0.0').users.get() → uses CRM_API v1.5.0 (1.x range)
+   * - Api.resources.version('~1.0.0').users.get() → uses CRM_API v1.0.0 (1.0.x range)
+   * 
+   * This design creates a clean separation:
+   * - Resource names identify WHAT you want to do
+   * - Version specifications identify WHICH implementation to use
+   * - No need to track which API owns which resource - the system handles it!
+   * 
    * @type {Proxy}
    */
   static resources = new Proxy({}, {
@@ -701,56 +799,59 @@ static _findApiInstanceByResourceName(resourceName, versionRange = 'latest') {
   }
 
   /**
+   * Internal method to execute an implementer with resource information.
+   * This is called by the ResourceProxyHandler to keep the context clean.
+   * @param {string} method - The name of the method to execute.
+   * @param {object} context - The user-provided context.
+   * @param {string} [resourceName] - The name of the resource (if called via resource).
+   * @returns {Promise<any>} The result of the executed method.
+   * @private
+   */
+  async _executeWithResource(method, context, resourceName) {
+    const handler = this.implementers.get(method);
+    if (!handler) {
+      throw new Error(`No implementation found for method: ${method}`);
+    }
+    
+    // Build the config object with all metadata
+    const config = {
+      method: method,
+      resourceName: resourceName || null,
+      apiOptions: this.options,
+      resourceOptions: null,
+      apiConstants: this.constants,
+      resourceConstants: null
+    };
+    
+    // If called through a resource, include resource data
+    if (resourceName) {
+      const resourceConfig = this._resources.get(resourceName);
+      config.resourceOptions = resourceConfig?.options || {};
+      config.resourceConstants = resourceConfig?.constants || new Map();
+    }
+    
+    // Build the api object with operational capabilities
+    const api = {
+      resources: this.instanceResources,
+      executeHook: (name, ctx) => this.executeHook(name, ctx),
+      constants: this.constants,
+      options: this.options
+    };
+    
+    // Call handler with new signature: { context, config, api }
+    return await handler({ context, config, api });
+  }
+
+  /**
    * Executes a registered implementer (method) by name.
+   * This is the public API for direct execution without a resource context.
    * @param {string} method - The name of the method to execute.
    * @param {object} [context={}] - The context object to pass to the method's handler.
    * @returns {Promise<any>} The result of the executed method.
    * @throws {Error} If no implementation is found for the given method.
    */
   async execute(method, context = {}) {
-    const handler = this.implementers.get(method)
-    if (!handler) {
-      throw new Error(`No implementation found for method: ${method}`)
-    }
-    
-    // Build the options object - this is framework data, not user data
-    const options = {
-      apiOptions: this.options,           // Full API instance options
-      resourceOptions: null,              // Resource options if applicable
-      resourceName: null,                 // Resource name if applicable
-      apiInstance: this,                  // Reference to the API instance
-      apiConstants: this.constants,       // API-level constants
-      resourceConstants: null             // Resource-level constants if applicable
-    };
-    
-    // If called through a resource, include resource data
-    if (context.resourceName) {
-      const resourceConfig = this._resources.get(context.resourceName);
-      options.resourceOptions = resourceConfig?.options || {};
-      options.resourceName = context.resourceName;
-      options.resourceConstants = resourceConfig?.constants || new Map();
-      
-      // Clean up context - remove framework-injected properties
-      delete context.resourceName;
-    }
-    
-    // Check if handler expects options (2 params) or just context (1 param) 
-    let result;
-    if (handler.length <= 1) {
-      // Legacy single-parameter handler - inject old properties for compatibility
-      context.apiInstance = this;
-      if (options.resourceName) {
-        context.resourceName = options.resourceName;
-      }
-      result = await handler(context);
-      delete context.apiInstance;
-      delete context.resourceName;
-    } else {
-      // New two-parameter handler
-      result = await handler(context, options);
-    }
-    
-    return result;
+    return await this._executeWithResource(method, context, null);
   }
 
   /**
@@ -781,8 +882,44 @@ static _findApiInstanceByResourceName(resourceName, versionRange = 'latest') {
     }
 
     try {
-      // Execute the plugin's main installation logic.
-      plugin.install(this, options, plugin.name)
+      // PLUGIN API WRAPPER: Simplified Interface for Plugin Authors
+      // ===========================================================
+      // We create a wrapped version of the API instance that plugins receive.
+      // This wrapper provides a more ergonomic interface while maintaining
+      // all the functionality of the original API.
+      //
+      // The main enhancement is the simplified hook() method that automatically
+      // includes the plugin name, reducing redundancy and potential errors.
+      //
+      // Original hook signature (5 parameters):
+      //   api.hook(hookName, pluginName, functionName, params, handler)
+      //
+      // Wrapped hook signature (3-4 parameters):
+      //   api.hook(hookName, functionName, handler)
+      //   api.hook(hookName, functionName, params, handler)
+      //
+      // This wrapper inherits all other methods from the API instance unchanged,
+      // so plugins can still use api.implement(), api.addConstant(), etc.
+      const pluginApi = Object.create(this);
+      
+      // Override the hook method with a simpler signature
+      pluginApi.hook = (hookName, functionName, params, handler) => {
+        // Support both signatures:
+        // 1. hook(hookName, functionName, handler) - params defaults to {}
+        // 2. hook(hookName, functionName, params, handler) - explicit params
+        if (typeof params === 'function' && handler === undefined) {
+          handler = params;
+          params = {};
+        }
+        
+        // Call the original hook method, automatically injecting the plugin name
+        // This ensures all hooks from this plugin are properly namespaced
+        return this.hook(hookName, plugin.name, functionName, params, handler);
+      };
+      
+      // Execute the plugin's install method with the wrapped API
+      // The plugin still receives (api, options, pluginName) for backward compatibility
+      plugin.install(pluginApi, options, plugin.name)
       this._installedPlugins.add(plugin.name)
     } catch (error) {
       console.error(`Error installing plugin '${plugin.name}' on API '${this.options.name}':`, error)

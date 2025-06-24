@@ -1,5 +1,5 @@
 {
-  "name": "json-rest-api2",
+  "name": "hooked-api",
   "version": "1.0.0",
   "main": "api.js",
   "type": "module",

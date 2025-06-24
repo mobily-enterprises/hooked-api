@@ -1189,8 +1189,9 @@ describe('Combined Hook, Implementation, and Resource Interactions - Context & O
     expect(testContext1.processedByResource).toBe(true);
     expect(testContext1.finalStatus).toBe('processed by API');
 
+    // Clear execution log before the second test case within the same test
+    clearExecutionLog(); 
     // Test Case 2: Invalid data for 'widgets' resource (should stop early)
-    clearExecutionLog();
     let testContext2 = { data: { isValid: false, originalValue: 'xyz' } };
     let result2 = await api.instanceResources.widgets.handleWidget(testContext2);
 
@@ -1220,9 +1221,10 @@ describe('Combined Hook, Implementation, and Resource Interactions - Context & O
     expect(reportResult).toBe('Fetched data for reports: monthly');
     expect(executionOrder).toEqual(['PLUGIN_FETCH_DATA_IMPL_FOR_reports']);
 
-    clearExecutionLog(); // Clear for the next assertion within the same test
     const metricResult = await api.instanceResources.metrics.fetchData({ query: 'daily' });
     expect(metricResult).toBe('Fetched data for metrics: daily');
+    // Clear for the next assertion within the same test
+    clearExecutionLog(); 
     expect(executionOrder).toEqual(['PLUGIN_FETCH_DATA_IMPL_FOR_metrics']);
   });
 

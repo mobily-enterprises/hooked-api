@@ -1,13 +1,14 @@
 {
   "name": "hooked-api",
   "version": "1.0.0",
-  "main": "api.js",
+  "main": "index.js",
   "type": "module",
   "directories": {
     "test": "tests"
   },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "node --test tests/*.test.js",
+    "test:comprehensive": "node --test tests/comprehensive-*.test.js"
   },
   "author": "",
   "license": "ISC",

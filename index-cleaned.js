@@ -27,6 +27,19 @@ export class Api {
     this._options = {
       api: Object.freeze(this.options)
     }
+    
+    // Create proxy for api.run.methodName() syntax
+    this.run = new Proxy((...args) => this._run(...args), {
+      get: (target, prop) => {
+        if (typeof prop === 'string') {
+          return (params) => this._run(prop, params);
+        }
+        return target[prop];
+      },
+      apply: (target, thisArg, args) => {
+        return target(...args);
+      }
+    });
 
     for (const [hookName, hookDef] of Object.entries(this.options.hooks || {})) {
       let handler, functionName, params
@@ -212,13 +225,13 @@ export class Api {
   }
 
 
-  async run(method, context = {}) {
+  async _run(method, params = {}) {
     const handler = this.implementers.get(method);
     if (!handler) {
       throw new Error(`No implementation found for method: ${method}`);
     }
     
-    return await handler({ context, api: this, name: method, options: this._options });
+    return await handler({ context: {}, api: this, name: method, options: this._options, params });
   }
 
   use(plugin, options = {}) {

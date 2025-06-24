@@ -415,9 +415,16 @@ export class Api {
         return sortedVersions[0]?.[1] || null; // Return the highest version
       }
 
-      // Find the best match for a semver range.
+      // Find the best match for a semver range OR a "greater-than-or-equal-to" plain version string.
       for (const [ver, api] of sortedVersions) {
-        if (semver.satisfies(ver, version)) {
+        // This block handles the case where a simple version string like "1.2.3" is passed.
+        // It's treated as ">=1.2.3", returning the highest available version that satisfies this.
+        if (!version.match(/[<>^~]/) && semver.valid(version)) {
+          if (semver.gte(ver, version)) {
+            return api;
+          }
+        // This handles standard semver ranges like "^1.2.3" or ">2.0.0".
+        } else if (semver.satisfies(ver, version)) {
           return api;
         }
       }
@@ -563,9 +570,9 @@ export class Api {
     // Ensure placement parameters are not used in a conflicting way.
     const hasPluginPlacement = (params.beforePlugin || params.afterPlugin)
     const hasFunctionPlacement = (params.beforeFunction || params.afterFunction)
-    if (hasPluginPlacement && hasFunctionPlacement) throw new Error(`Hook '${hookName}' ... cannot specify both plugin-level and function-level placement.`)
-    if (params.beforePlugin && params.afterPlugin) throw new Error(`Hook '${hookName}' ... cannot specify both 'beforePlugin' and 'afterPlugin'.`)
-    if (params.beforeFunction && params.afterFunction) throw new Error(`Hook '${hookName}' ... cannot specify both 'beforeFunction' and 'afterFunction'.`)
+    if (hasPluginPlacement && hasFunctionPlacement) throw new Error(`Hook '${hookName}' from plugin '${pluginName}' (function: '${functionName}') cannot specify both plugin-level and function-level placement parameters.`)
+    if (params.beforePlugin && params.afterPlugin) throw new Error(`Hook '${hookName}' from plugin '${pluginName}' (function: '${functionName}') cannot specify both 'beforePlugin' and 'afterPlugin'.`)
+    if (params.beforeFunction && params.afterFunction) throw new Error(`Hook '${hookName}' from plugin '${pluginName}' (function: '${functionName}') cannot specify both 'beforeFunction' and 'afterFunction'.`)
 
     if (!this.hooks.has(hookName)) {
       this.hooks.set(hookName, [])
@@ -576,22 +583,49 @@ export class Api {
     let inserted = false;
     // This logic allows handlers to be spliced into the array at a specific location.
     if (params.beforePlugin) {
-      const index = handlers.findIndex(h => h.pluginName === params.beforePlugin);
-      if (index !== -1) { handlers.splice(index, 0, newHandlerEntry); inserted = true; }
-      else { throw new Error(`Hook '${hookName}' ... 'beforePlugin' target '${params.beforePlugin}' not found.`); }
+      const targetPluginName = params.beforePlugin
+      const index = handlers.findIndex(h => h.pluginName === targetPluginName)
+      if (index !== -1) {
+        handlers.splice(index, 0, newHandlerEntry)
+        inserted = true
+      } else {
+        throw new Error(`Hook '${hookName}' from plugin '${pluginName}' (function: '${functionName}'): 'beforePlugin' target plugin '${targetPluginName}' not found among existing handlers.`)
+      }
     } else if (params.afterPlugin) {
-      let lastIndex = -1; for (let i = handlers.length - 1; i >= 0; i--) { if (handlers[i].pluginName === params.afterPlugin) { lastIndex = i; break; } }
-      if (lastIndex !== -1) { handlers.splice(lastIndex + 1, 0, newHandlerEntry); inserted = true; }
-      else { throw new Error(`Hook '${hookName}' ... 'afterPlugin' target '${params.afterPlugin}' not found.`); }
+      const targetPluginName = params.afterPlugin
+      let lastIndex = -1
+      for (let i = handlers.length - 1; i >= 0; i--) {
+        if (handlers[i].pluginName === targetPluginName) {
+          lastIndex = i
+          break
+        }
+      }
+      if (lastIndex !== -1) {
+        handlers.splice(lastIndex + 1, 0, newHandlerEntry)
+        inserted = true
+      } else {
+        throw new Error(`Hook '${hookName}' from plugin '${pluginName}' (function: '${functionName}'): 'afterPlugin' target plugin '${targetPluginName}' not found among existing handlers.`)
+      }
     } else if (params.beforeFunction) {
-      const index = handlers.findIndex(h => h.functionName === params.beforeFunction);
-      if (index !== -1) { handlers.splice(index, 0, newHandlerEntry); inserted = true; }
-      else { throw new Error(`Hook '${hookName}' ... 'beforeFunction' target '${params.beforeFunction}' not found.`); }
+      const targetFunctionName = params.beforeFunction
+      const index = handlers.findIndex(h => h.functionName === targetFunctionName)
+      if (index !== -1) {
+        handlers.splice(index, 0, newHandlerEntry)
+        inserted = true
+      } else {
+        throw new Error(`Hook '${hookName}' from plugin '${pluginName}' (function: '${functionName}'): 'beforeFunction' target function '${targetFunctionName}' not found among existing handlers.`)
+      }
     } else if (params.afterFunction) {
-      const index = handlers.findIndex(h => h.functionName === params.afterFunction);
-      if (index !== -1) { handlers.splice(index + 1, 0, newHandlerEntry); inserted = true; }
-      else { throw new Error(`Hook '${hookName}' ... 'afterFunction' target '${params.afterFunction}' not found.`); }
+      const targetFunctionName = params.afterFunction
+      const index = handlers.findIndex(h => h.functionName === targetFunctionName)
+      if (index !== -1) {
+        handlers.splice(index + 1, 0, newHandlerEntry)
+        inserted = true
+      } else {
+        throw new Error(`Hook '${hookName}' from plugin '${pluginName}' (function: '${functionName}'): 'afterFunction' target function '${targetFunctionName}' not found among existing handlers.`)
+      }
     }
+    // [FIX ENDS HERE]
 
     // If no placement is specified, simply add the handler to the end of the chain.
     if (!inserted) {

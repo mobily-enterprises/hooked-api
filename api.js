@@ -24,16 +24,7 @@ const ResourceProxyHandler = {
       };
     }
 
-    // Handle hook calls (e.g., .beforeOperation())
-    // Hooks are also registered on the Api instance.
-    if (apiInstance.hooks.has(prop)) {
-      return async (context = {}) => {
-        // Pass the resourceName as part of the context for the hook handler to use
-        return await apiInstance.executeHook(prop, { ...context, resourceName });
-      };
-    }
-
-    // If the property is not an implemented method or a hook, it's undefined.
+    // If the property is not an implemented method, it's undefined.
     return undefined;
   }
 }
@@ -126,7 +117,7 @@ export class Api {
         if (typeof resourceName !== 'string') {
           return undefined; // Fallback for non-string properties
         }
-        return this.getResourceProxy(resourceName);
+        return this._getResourceProxy(resourceName);
       }
     });
   }
@@ -159,14 +150,28 @@ export class Api {
    * @param {Object} [resourceOptions={}] - Options specific to this resource (e.g., schema, validation rules).
    * @param {Object} [resourceExtraHooks={}] - Hooks specific to this resource, defined as an object.
    * @returns {Api} The API instance for chaining.
-   * @throws {Error} If the resource name is invalid or already exists on this API instance.
+   * @throws {Error} If the resource name is invalid or already exists on this API instance (either locally or globally across other API instances).
    */
   addResource(name, resourceOptions = {}, resourceExtraHooks = {}) {
     if (typeof name !== 'string' || name.trim() === '') {
       throw new Error('Resource name must be a non-empty string.')
     }
+
+    // 1. Check for local uniqueness (on this API instance)
     if (this._resources.has(name)) {
-      throw new Error(`Resource '${name}' already exists on API '${this.options.name}'.`)
+      throw new Error(`Resource '${name}' already exists on API '${this.options.name}'.`);
+    }
+
+    // 2. Check for global uniqueness (across all registered API instances)
+    // We iterate through all registered API instances to ensure no other instance has this resource name.
+    for (const [apiName, versionsMap] of globalRegistry.entries()) {
+      for (const [version, apiInstance] of versionsMap.entries()) {
+        // Skip checking against itself, as local uniqueness is handled above.
+        // This is primarily for preventing conflicts with other API instances.
+        if (apiInstance !== this && apiInstance._resources.has(name)) {
+          throw new Error(`Resource name '${name}' is already used by API '${apiName}' version '${version}'. Resource names must be globally unique.`);
+        }
+      }
     }
 
     // Store resource options. No need to store hooks separately here as they're integrated into this.hooks.
@@ -220,7 +225,7 @@ export class Api {
    * @param {string} resourceName - The name of the resource to get a proxy for.
    * @returns {Proxy|undefined} A proxy object for the resource, or undefined if not found.
    */
-  getResourceProxy(resourceName) {
+  _getResourceProxy(resourceName) {
     if (!this._resources.has(resourceName)) {
       console.warn(`Resource '${resourceName}' not found on API '${this.options.name}'.`);
       return undefined;
@@ -380,7 +385,7 @@ export class Api {
                 return undefined;
               }
               // Delegate to the API instance's resource proxy helper
-              return apiInstance.getResourceProxy(resourceName);
+              return apiInstance._getResourceProxy(resourceName);
             }
           });
         };
@@ -395,7 +400,7 @@ export class Api {
         return undefined;
       }
       // Delegate to the API instance's resource proxy helper
-      return apiInstance.getResourceProxy(resourceName);
+      return apiInstance._getResourceProxy(resourceName);
     }
   });
 
@@ -513,14 +518,16 @@ export class Api {
    */
   async executeHook(name, context) {
     const handlers = this.hooks.get(name) || []
+    context.apiInstance = this; // Temporarily add apiInstance to the original context
     for (const { handler, pluginName, functionName } of handlers) {
-      const result = await handler({ ...context, apiInstance: this }) // Pass apiInstance to context
+      const result = await handler(context); // Pass the original context by reference
       if (result === false) {
         console.log(`Hook '${name}' handler from plugin '${pluginName}' (function: '${functionName}') stopped the chain.`)
         break
       }
     }
-    return context
+    delete context.apiInstance; // Clean up after execution
+    return context; // The original context, now potentially modified
   }
 
   /**
@@ -550,7 +557,10 @@ export class Api {
     if (!handler) {
       throw new Error(`No implementation found for method: ${method}`)
     }
-    return await handler({ ...context, apiInstance: this }) // Pass apiInstance to context
+    context.apiInstance = this; // Temporarily add apiInstance to the original context
+    const result = await handler(context); // Pass the original context by reference
+    delete context.apiInstance; // Clean up after execution
+    return result; // The handler's return value
   }
 
   /**

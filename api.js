@@ -19,8 +19,12 @@ const ResourceProxyHandler = {
     // The method is implemented on the Api instance, but operates in the context of this resource.
     if (apiInstance.implementers.has(prop)) {
       return async (context = {}) => {
-        // Pass the resourceName as part of the context for the implementation to use
-        return await apiInstance.execute(prop, { ...context, resourceName });
+        // Inject resourceName directly into the context passed to execute, and then clean up.
+        // This ensures the original context object can be mutated throughout the chain.
+        context.resourceName = resourceName; // Add resourceName to the context object
+        const result = await apiInstance.execute(prop, context);
+        delete context.resourceName; // Clean up the resourceName property from the context
+        return result;
       };
     }
 

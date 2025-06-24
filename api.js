@@ -229,11 +229,11 @@ export class Api {
 
     /**
      * A convenient proxy for accessing resources attached to *this specific* API instance.
-     * For example: `myApi.localResources.users.create()`. This avoids having to use the
+     * For example: `myApi.instanceResources.users.create()`. This avoids having to use the
      * global `Api.resources` and ensures you are interacting with the intended instance.
      * @type {Proxy}
      */
-    this.localResources = new Proxy({}, {
+    this.instanceResources = new Proxy({}, {
       get: (target, resourceName) => {
         if (typeof resourceName !== 'string') {
           return undefined; // Safety for non-string properties like `Symbol.iterator`.
@@ -285,16 +285,17 @@ export class Api {
       throw new Error(`Resource '${name}' already exists on API '${this.options.name}'.`);
     }
 
-    // To prevent confusion with the global `Api.resources` accessor, a resource name
-    // must be unique across all registered API instances.
-    for (const [apiName, versionsMap] of globalRegistry.entries()) {
-      for (const [version, apiInstance] of versionsMap.entries()) {
-        if (apiInstance !== this && apiInstance._resources.has(name)) {
-          throw new Error(`Resource name '${name}' is already used by API '${apiName}' version '${version}'. Resource names must be globally unique.`);
+    // To prevent confusion, a resource name must be unique across DIFFERENT APIs.
+    // However, different versions of the SAME API are allowed to share a resource name.
+    for (const [registeredApiName, versionsMap] of globalRegistry.entries()) {
+        if (registeredApiName !== this.options.name) {
+            for (const otherApiInstance of versionsMap.values()) {
+                if (otherApiInstance._resources.has(name)) {
+                    throw new Error(`Resource name '${name}' is already used by API '${registeredApiName}'. Resource names must be unique across different APIs.`);
+                }
+            }
         }
-      }
     }
-
     // Process and store any implementers that are specific to this resource.
     const implementersMap = new Map();
     if (resourceImplementers && typeof resourceImplementers === 'object') {
@@ -370,7 +371,7 @@ export class Api {
 
   /**
    * Internal helper to create a resource proxy for a given resource name.
-   * This is used by both the global `Api.resources` and the instance-local `this.localResources`.
+   * This is used by both the global `Api.resources` and the instance-local `this.instanceResources`.
    * @param {string} resourceName - The name of the resource.
    * @returns {Proxy|undefined} A proxy for the resource, or undefined if not found.
    * @private
@@ -415,19 +416,18 @@ export class Api {
         return sortedVersions[0]?.[1] || null; // Return the highest version
       }
 
-      // Find the best match for a semver range OR a "greater-than-or-equal-to" plain version string.
+     // This logic correctly handles simple version strings (e.g., '1.0.0') as '>=1.0.0'
+      // while also supporting standard semver ranges.
       for (const [ver, api] of sortedVersions) {
-        // This block handles the case where a simple version string like "1.2.3" is passed.
-        // It's treated as ">=1.2.3", returning the highest available version that satisfies this.
         if (!version.match(/[<>^~]/) && semver.valid(version)) {
-          if (semver.gte(ver, version)) {
-            return api;
-          }
-        // This handles standard semver ranges like "^1.2.3" or ">2.0.0".
+            if (semver.gte(ver, version)) {
+                return api;
+            }
         } else if (semver.satisfies(ver, version)) {
-          return api;
+            return api;
         }
       }
+
 
       return null;
     },
@@ -484,27 +484,38 @@ export class Api {
    * @returns {Api|null} The highest-versioned matching API instance, or null.
    * @private
    */
-  static _findApiInstanceByResourceName(resourceName, versionRange = 'latest') {
-    // We must check every registered API.
-    for (const [apiName, versionsMap] of globalRegistry.entries()) {
-      // Sort to ensure we find the highest compatible version first.
-      const sortedVersions = Array.from(versionsMap.entries())
-        .sort(([a], [b]) => semver.rcompare(b, a));
-
-      for (const [ver, apiInstance] of sortedVersions) {
-        // Filter by the version range if one is provided.
-        if (versionRange !== 'latest' && !semver.satisfies(ver, versionRange)) {
-          continue;
+static _findApiInstanceByResourceName(resourceName, versionRange = 'latest') {
+    let candidates = [];
+    // 1. GATHER: Go through all registered APIs and create a list of every single
+    // instance that has the resource we're looking for.
+    for (const versionsMap of globalRegistry.values()) {
+        for (const apiInstance of versionsMap.values()) {
+            if (apiInstance._resources && apiInstance._resources.has(resourceName)) {
+                candidates.push(apiInstance);
+            }
         }
-
-        // If this instance has the resource, we've found our match.
-        if (apiInstance._resources && apiInstance._resources.has(resourceName)) {
-          return apiInstance;
-        }
-      }
     }
-    return null; // Not found in any API.
-  }
+
+    if (candidates.length === 0) {
+        return null;
+    }
+
+    // 2. FILTER: From that list of candidates, filter out any that don't match the
+    // requested versionRange.
+    const filteredCandidates = candidates.filter(api => {
+        if (versionRange === 'latest') return true; // Keep all for 'latest' check
+        return semver.satisfies(api.options.version, versionRange);
+    });
+
+    if (filteredCandidates.length === 0) {
+        return null;
+    }
+
+    // 3. SELECT: Sort the final, filtered list by version and return the highest one.
+    filteredCandidates.sort((a, b) => semver.rcompare(a.options.version, b.options.version));
+
+    return filteredCandidates[0];
+}
 
   /**
    * A static, global entry point for accessing any resource on any registered API.
@@ -568,11 +579,11 @@ export class Api {
     if (typeof handler !== 'function') throw new Error(`Hook handler for '${hookName}' from plugin '${pluginName}' (function: '${functionName}') must be a function.`)
 
     // Ensure placement parameters are not used in a conflicting way.
-    const hasPluginPlacement = (params.beforePlugin || params.afterPlugin)
-    const hasFunctionPlacement = (params.beforeFunction || params.afterFunction)
-    if (hasPluginPlacement && hasFunctionPlacement) throw new Error(`Hook '${hookName}' from plugin '${pluginName}' (function: '${functionName}') cannot specify both plugin-level and function-level placement parameters.`)
-    if (params.beforePlugin && params.afterPlugin) throw new Error(`Hook '${hookName}' from plugin '${pluginName}' (function: '${functionName}') cannot specify both 'beforePlugin' and 'afterPlugin'.`)
-    if (params.beforeFunction && params.afterFunction) throw new Error(`Hook '${hookName}' from plugin '${pluginName}' (function: '${functionName}') cannot specify both 'beforeFunction' and 'afterFunction'.`)
+    const hasPluginPlacement = (params.beforePlugin || params.afterPlugin);
+    const hasFunctionPlacement = (params.beforeFunction || params.afterFunction);
+    if (hasPluginPlacement && hasFunctionPlacement) throw new Error(`Hook '${hookName}' from plugin '${pluginName}' (function: '${functionName}') cannot specify both plugin-level and function-level placement parameters.`);
+    if (params.beforePlugin && params.afterPlugin) throw new Error(`Hook '${hookName}' from plugin '${pluginName}' (function: '${functionName}') cannot specify both 'beforePlugin' and 'afterPlugin'.`);
+    if (params.beforeFunction && params.afterFunction) throw new Error(`Hook '${hookName}' from plugin '${pluginName}' (function: '${functionName}') cannot specify both 'beforeFunction' and 'afterFunction'.`);
 
     if (!this.hooks.has(hookName)) {
       this.hooks.set(hookName, [])
@@ -625,8 +636,7 @@ export class Api {
         throw new Error(`Hook '${hookName}' from plugin '${pluginName}' (function: '${functionName}'): 'afterFunction' target function '${targetFunctionName}' not found among existing handlers.`)
       }
     }
-    // [FIX ENDS HERE]
-
+    
     // If no placement is specified, simply add the handler to the end of the chain.
     if (!inserted) {
       handlers.push(newHandlerEntry)

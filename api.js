@@ -5,18 +5,59 @@ import semver from 'semver' // Use the actual semver library
 let globalRegistry = new Map()
 
 /**
- * ResourceProxyHandler
- * This proxy handles calls to methods or hooks on a specific resource within an API instance.
- * It is used for both global access (Api.resources.myResource.method())
- * and local API instance access (myApiInstance.myResource.method()).
+ * A proxy handler that intercepts property access on a specific resource.
+ *
+ * This is the core mechanism that allows for seamless access to both resource-specific
+ * and API-level constants and implementers (methods). When a property is accessed on a
+ * resource proxy (e.g., `myApi.users.create` or `myApi.users.placeholder`), this handler's
+ * `get` method resolves the property based on a defined order of precedence.
+ *
+ * The lookup priority is as follows:
+ * 1. Resource-specific constant
+ * 2. Resource-specific implementer
+ * 3. API-level constant
+ * 4. API-level implementer
+ *
+ * If an implementer (function) is found, this handler returns a new async function
+ * that, when called, automatically injects the correct `context` and executes the
+ * original handler. If a constant is found, its value is returned directly.
+ *
+ * The `get` method of this handler receives the following parameters from the Proxy:
+ * @param {object} target - The proxy's internal target object, containing `_apiInstance` and `_resourceName`.
+ * @param {string} prop - The name of the property being accessed (e.g., 'createUser').
+ * @returns {*|Function|undefined} Returns the constant's value directly, an executable async function for an implementer, or `undefined` if the property is not found.
  */
 const ResourceProxyHandler = {
   get(target, prop) {
     const apiInstance = target._apiInstance;
     const resourceName = target._resourceName;
+    const resourceConfig = apiInstance._resources.get(resourceName);
 
-    // Handle implemented methods (e.g., .createUser())
-    // The method is implemented on the Api instance, but operates in the context of this resource.
+    // Priority 1: Check for a resource-specific constant.
+    if (resourceConfig && resourceConfig.constants && resourceConfig.constants.has(prop)) {
+      return resourceConfig.constants.get(prop);
+    }
+
+    // Priority 2: Check for a resource-specific implementer.
+    if (resourceConfig && resourceConfig.implementers && resourceConfig.implementers.has(prop)) {
+      const resourceSpecificHandler = resourceConfig.implementers.get(prop);
+      // Directly execute this handler, it is not on the main API instance.
+      return async (context = {}) => {
+        context.resourceName = resourceName;
+        context.apiInstance = apiInstance; // Add apiInstance to context for consistency.
+        const result = await resourceSpecificHandler(context);
+        delete context.apiInstance; // Clean up.
+        delete context.resourceName;
+        return result;
+      };
+    }
+    
+    // Priority 3: Check for an API-level constant.
+    if (apiInstance.constants.has(prop)) {
+        return apiInstance.constants.get(prop);
+    }
+
+    // Priority 4: Fallback to the general, API-level implementer.
     if (apiInstance.implementers.has(prop)) {
       return async (context = {}) => { // context here is the object passed by the caller (e.g., { data: { name: 'Jane' } })
         context.resourceName = resourceName; // Add resourceName to the context object
@@ -26,7 +67,7 @@ const ResourceProxyHandler = {
       };
     }
 
-    // If the property is not an implemented method, it's undefined.
+    // Priority 5: If the property is not found, it's undefined.
     return undefined;
   }
 }
@@ -43,6 +84,8 @@ export class Api {
       name: null,    // Unique name for this API instance (e.g., 'CRM_API')
       version: '1.0.0', // Version of this API instance
       hooks: {},     // Hooks defined during API construction
+      implementers: {}, // Implementers defined during API construction
+      constants: {}, // [NEW] Constants defined during API construction
       ...options
     }
 
@@ -59,6 +102,9 @@ export class Api {
     // and wrapped resource-specific hooks.
     this.hooks = new Map()
 
+    // Storage for API-level constants
+    this.constants = new Map()
+
     // Storage for different implementations (methods available on this API instance)
     this.implementers = new Map()
 
@@ -66,8 +112,7 @@ export class Api {
     this._installedPlugins = new Set()
 
     // Internal map to store resource configurations (options and potentially their own hooks)
-    // Map<resourceName, { options: object }>
-    // Resource-specific hooks are integrated directly into `this.hooks` after being wrapped.
+    // Map<resourceName, { options: object, implementers: Map<methodName, handler>, constants: Map<string, any> }>
     this._resources = new Map()
 
     // Process hooks defined in the constructor options (these are API-level hooks)
@@ -108,6 +153,27 @@ export class Api {
         }
       }
     }
+
+    // Process constants defined in the constructor options
+    if (this.options.constants && typeof this.options.constants === 'object') {
+        for (const constantName in this.options.constants) {
+            if (Object.prototype.hasOwnProperty.call(this.options.constants, constantName)) {
+                this.addConstant(constantName, this.options.constants[constantName]);
+            }
+        }
+    }
+
+    // Process implementers defined in the constructor options
+    if (this.options.implementers && typeof this.options.implementers === 'object') {
+      for (const methodName in this.options.implementers) {
+        if (Object.prototype.hasOwnProperty.call(this.options.implementers, methodName)) {
+          const handler = this.options.implementers[methodName];
+          // We can directly call the existing implement method for consistency and validation.
+          this.implement(methodName, handler);
+        }
+      }
+    }
+
 
     // Auto-register this API instance in the global registry
     this.register()
@@ -151,10 +217,12 @@ export class Api {
    * @param {string} name - The unique name of the resource (e.g., 'books', 'users').
    * @param {Object} [resourceOptions={}] - Options specific to this resource (e.g., schema, validation rules).
    * @param {Object} [resourceExtraHooks={}] - Hooks specific to this resource, defined as an object.
+   * @param {Object} [resourceImplementers={}] - Implementers (methods) specific to this resource.
+   * @param {Object} [resourceConstants={}] - [NEW] Constants specific to this resource.
    * @returns {Api} The API instance for chaining.
    * @throws {Error} If the resource name is invalid or already exists on this API instance (either locally or globally across other API instances).
    */
-  addResource(name, resourceOptions = {}, resourceExtraHooks = {}) {
+  addResource(name, resourceOptions = {}, resourceExtraHooks = {}, resourceImplementers = {}, resourceConstants = {}) {
     if (typeof name !== 'string' || name.trim() === '') {
       throw new Error('Resource name must be a non-empty string.')
     }
@@ -176,8 +244,48 @@ export class Api {
       }
     }
 
-    // Store resource options. No need to store hooks separately here as they're integrated into this.hooks.
-    this._resources.set(name, { options: resourceOptions });
+    // Process and store resource-specific implementers
+    const implementersMap = new Map();
+    if (resourceImplementers && typeof resourceImplementers === 'object') {
+      for (const methodName in resourceImplementers) {
+        if (Object.prototype.hasOwnProperty.call(resourceImplementers, methodName)) {
+          const handler = resourceImplementers[methodName];
+          if (typeof handler !== 'function') {
+            throw new Error(`Implementer '${methodName}' for resource '${name}' on API '${this.options.name}' must be a function.`);
+          }
+          // Warn if a resource implementer "shadows" a global API implementer
+          if (this.implementers.has(methodName)) {
+            console.warn(`Resource '${name}' is defining an implementer '${methodName}' which shadows an existing API-level implementer on '${this.options.name}'.`);
+          }
+          implementersMap.set(methodName, handler);
+        }
+      }
+    }
+
+    // Process and store resource-specific constants
+    const constantsMap = new Map();
+    if (resourceConstants && typeof resourceConstants === 'object') {
+        for (const constantName in resourceConstants) {
+            if (Object.prototype.hasOwnProperty.call(resourceConstants, constantName)) {
+                const value = resourceConstants[constantName];
+                if (this.implementers.has(constantName) || this.constants.has(constantName)) {
+                    console.warn(`Resource '${name}' is defining a constant '${constantName}' which shadows an existing API-level property on '${this.options.name}'.`);
+                }
+                if (implementersMap.has(constantName)) {
+                    console.warn(`Resource '${name}' has a constant '${constantName}' which shares a name with a resource-specific implementer. The constant will take priority.`);
+                }
+                constantsMap.set(constantName, value);
+            }
+        }
+    }
+
+    // Store resource options and its specific implementers.
+    this._resources.set(name, {
+        options: resourceOptions,
+        implementers: implementersMap,
+        constants: constantsMap
+    });
+    // [END of enhancement]
 
     // Process resource-specific hooks and add them to this API instance's hook map
     for (const hookName in resourceExtraHooks) {
@@ -533,6 +641,20 @@ export class Api {
   }
 
   /**
+   * [NEW] Register a constant on this API instance.
+   * @param {string} name - The name of the constant.
+   * @param {*} value - The value of the constant.
+   * @returns {Api} The API instance for chaining.
+   */
+  addConstant(name, value) {
+    if (this.implementers.has(name)) {
+        console.warn(`Constant '${name}' is shadowing an implementer with the same name. The constant will take priority.`);
+    }
+    this.constants.set(name, value);
+    return this;
+  }
+
+  /**
    * Register an implementation for a specific method.
    * These methods are executed on the API instance, potentially in the context of a resource.
    * @param {string} method - The name of the method to implement (e.g., 'get', 'query').
@@ -542,6 +664,9 @@ export class Api {
   implement(method, handler) {
     if (typeof handler !== 'function') {
       throw new Error(`Implementation for '${method}' must be a function.`)
+    }
+    if (this.constants.has(method)) {
+        console.warn(`Implementer '${method}' is being shadowed by a constant with the same name. The constant will take priority.`);
     }
     this.implementers.set(method, handler)
     return this

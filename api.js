@@ -1,41 +1,40 @@
 import semver from 'semver' // Use the actual semver library
 
 // --- Global Registry (Central Store for API Instances and Resources) ---
-// This is now a more complex global registry.
-// It maps API names and versions to Api instances,
-// and also maps ALL globally unique resource names to their owning Api instance.
+// This global registry manages API instances by name and version,
+// and maps globally unique resource names to their owning Api instance.
 let globalRegistry = {
   apiInstances: new Map(), // Map<apiName, Map<apiVersion, ApiInstance>>
   resourceToApiMap: new Map(), // Map<resourceName, ApiInstance>
 }
 
-// --- Proxy Handler for Resource Access (Layer 2 - now specific to Resources) ---
+// --- Proxy Handler for Resource Access (Layer 2 - specific to Resources) ---
 // This enables calls like Api.resources.users.createUser() or Api.resources.users.version('1.0.0').beforeOperation()
-// This proxy now operates on a simple 'ResourceProxyTarget' object,
+// This proxy operates on a simple 'ResourceProxyTarget' object,
 // which points back to the owning Api instance and the resource name.
 const ResourceProxyHandler = {
   get(targetResourceProxy, prop) {
     const { apiInstance, resourceName } = targetResourceProxy
 
-    // Handle version selection first for the *parent API instance*
+    // Handle version selection for the parent API instance
     if (prop === 'version') {
       return (range = 'latest') => {
-        // Find the specific version of the *parent API*
+        // Find the specific version of the parent API
         const specificApi = Api.registry.get(apiInstance.options.name, range)
         if (!specificApi) {
           console.warn(`API '${apiInstance.options.name}' version '${range}' not found for resource '${resourceName}'.`)
           return null // Or throw, depending on desired strictness
         }
-        // Return a new proxy target pointing to the specific API version, but for the *same resource*
+        // Return a new proxy target pointing to the specific API version, but for the same resource
         return new Proxy({ apiInstance: specificApi, resourceName: resourceName }, ResourceProxyHandler)
       }
     }
 
     // Handle implemented methods (delegated to the owning Api instance)
-    // Methods like 'createUser' are implemented by the *Api instance*, not the resource itself.
+    // Methods like 'createUser' are implemented by the Api instance, not the resource itself.
     if (apiInstance.implementers.has(prop)) {
       return async (context = {}) => {
-        // Automatically execute the implemented method on the *owning Api instance*
+        // Automatically execute the implemented method on the owning Api instance
         // Pass resourceName in context
         return await apiInstance.execute(prop, { ...context, resourceName })
       }
@@ -46,7 +45,7 @@ const ResourceProxyHandler = {
     // These hooks could be API-wide or resource-specific.
     if (apiInstance.hooks.has(prop)) { // Check API-wide hooks first
       return async (context = {}) => {
-        // Automatically execute the hook chain for this name on the *owning Api instance*
+        // Automatically execute the hook chain for this name on the owning Api instance
         // Pass resourceName in context
         return await apiInstance.executeHook(prop, { ...context, resourceName })
       }
@@ -59,7 +58,7 @@ const ResourceProxyHandler = {
 
 /**
  * Core API class providing versioning, hook, and implementation systems.
- * An Api instance is now a container for resources, not a resource itself.
+ * An Api instance is a container for resources.
  */
 export class Api {
   constructor(options = {}) {
@@ -68,8 +67,8 @@ export class Api {
       name: null, // Name of this API instance (e.g., 'CRM_API')
       version: null, // Version of this API instance (e.g., '1.0.0')
       ...options,
-      // Hooks from constructor options will now apply to the whole API instance,
-      // and will receive resourceName in context if called via a resource proxy.
+      // Hooks from constructor options apply to the whole API instance,
+      // and receive resourceName in context if called via a resource proxy.
       hooks: options.hooks || {} // Ensure hooks property exists for constructor
     }
 
@@ -142,7 +141,7 @@ export class Api {
       }
 
       // Return a proxy that points to the owning Api instance and the requested resource name.
-      // The ResourceProxyHandler will then handle method/hook delegation.
+      // The ResourceProxyHandler handles method/hook delegation.
       return new Proxy({ apiInstance, resourceName }, ResourceProxyHandler)
     }
   })
@@ -269,7 +268,7 @@ export class Api {
       const sortedVersions = Array.from(versions.entries())
         .sort(([a], [b]) => semver.compare(b, a))
 
-      // 3. Handle 'latest' request (which now relies on the sort).
+      // 3. Handle 'latest' request (which relies on the sort).
       if (version === 'latest') {
         return sortedVersions[0]?.[1]
       }
@@ -336,7 +335,7 @@ export class Api {
 
   /**
    * Register a hook handler for a specific hook name.
-   * This method now can register hooks to the API instance's general hooks,
+   * This method registers hooks to the API instance's general hooks,
    * or to a specific resource's hooks map if provided.
    * @param {string} hookName - The name of the hook.
    * @param {string} pluginName - The name of the plugin registering this hook.
@@ -432,7 +431,7 @@ export class Api {
 
   /**
    * Execute all registered handlers for a given hook name.
-   * This now aggregates API-wide hooks and resource-specific hooks.
+   * This aggregates API-wide hooks and resource-specific hooks.
    * @param {string} name - The name of the hook to execute.
    * @param {object} context - The context object to pass to the handlers.
    * @returns {Promise<object>} The modified context object after all handlers have run.

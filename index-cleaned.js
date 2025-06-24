@@ -24,6 +24,7 @@ export class Api {
     this.constants = new Map()
     this.implementers = new Map()
     this._installedPlugins = new Set()
+    this._resources = new Map()
     this._options = {
       api: Object.freeze(this.options)
     }
@@ -38,6 +39,25 @@ export class Api {
       },
       apply: (target, thisArg, args) => {
         return target(...args);
+      }
+    });
+    
+    // Create proxy for api.resources.resourceName.methodName() syntax
+    const resourcesKey = this.options.resourcesKey || 'resources';
+    this[resourcesKey] = new Proxy({}, {
+      get: (target, resourceName) => {
+        if (!this._resources.has(resourceName)) return undefined;
+        
+        // Return another proxy for the methods
+        return new Proxy((...args) => this._runResource(resourceName, ...args), {
+          get: (target, methodName) => {
+            if (typeof methodName !== 'string') return undefined;
+            return (params) => this._runResource(resourceName, methodName, params);
+          },
+          apply: (target, thisArg, args) => {
+            return target(...args);
+          }
+        });
       }
     });
 
@@ -203,10 +223,42 @@ export class Api {
     return this
   }
 
-  async runHooks(name, context) {
+  _buildResourceApi(resourceName) {
+    const resourceConfig = this._resources.get(resourceName);
+    if (!resourceConfig) {
+      return { api: this, options: this._options };
+    }
+    
+    // Create api object with overridden constants and implementers
+    const api = Object.create(this);
+    
+    // Override constants: resource constants take precedence
+    api.constants = new Map([
+      ...this.constants,
+      ...resourceConfig.constants
+    ]);
+    
+    // Override implementers: resource implementers take precedence
+    api.implementers = new Map([
+      ...this.implementers,
+      ...resourceConfig.implementers
+    ]);
+    
+    // Build options with resource info using the configured key
+    const resourcesKey = this._options.api.resourcesKey || 'resources';
+    const options = Object.assign({}, this._options, {
+      [resourcesKey]: Object.freeze(resourceConfig.options)
+    });
+    
+    return { api, options };
+  }
+
+  async runHooks(name, context, resource = null) {
     const handlers = this.hooks.get(name) || []
+    const { api, options } = resource ? this._buildResourceApi(resource) : { api: this, options: this._options };
+    
     for (const { handler, pluginName, functionName } of handlers) {
-      const result = await handler({ context, api: this, name, options: this._options });
+      const result = await handler({ context, api, name, options, params: {}, resource });
       if (result === false) {
         console.log(`Hook '${name}' handler from plugin '${pluginName}' (function: '${functionName}') stopped the chain.`)
         break
@@ -224,6 +276,55 @@ export class Api {
     return this
   }
 
+  addResource(name, options = {}, extras = {}) {
+    if (this._resources.has(name)) {
+      throw new Error(`Resource '${name}' already exists`);
+    }
+    
+    const { hooks = {}, implementers = {}, constants = {} } = extras;
+    
+    // Process resource hooks - wrap them to only run for this resource
+    for (const [hookName, hookDef] of Object.entries(hooks)) {
+      let handler, functionName, params
+      
+      if (typeof hookDef === 'function') {
+        handler = hookDef
+        functionName = hookName
+        params = {}
+      } else if (hookDef && typeof hookDef === 'object') {
+        handler = hookDef.handler
+        functionName = hookDef.functionName || hookName
+        const { handler: _, functionName: __, ...rest } = hookDef
+        params = rest
+      } else {
+        throw new Error(`Hook '${hookName}' must be a function or object`)
+      }
+      
+      if (typeof handler !== 'function') {
+        throw new Error(`Hook '${hookName}' must have a function handler`)
+      }
+      
+      // Wrap handler to only run for this resource
+      const resourceName = name; // Capture resource name in closure
+      const wrappedHandler = ({ context, api, name, options, params, resource }) => {
+        if (resource === resourceName) {
+          return handler({ context, api, name, options, params, resource });
+        }
+      };
+      
+      this.addHook(hookName, `resource:${name}`, functionName, params, wrappedHandler)
+    }
+    
+    // Store resource configuration
+    this._resources.set(name, {
+      options: Object.freeze(options),
+      implementers: new Map(Object.entries(implementers)),
+      constants: new Map(Object.entries(constants))
+    });
+    
+    return this;
+  }
+
 
   async _run(method, params = {}) {
     const handler = this.implementers.get(method);
@@ -231,7 +332,32 @@ export class Api {
       throw new Error(`No implementation found for method: ${method}`);
     }
     
-    return await handler({ context: {}, api: this, name: method, options: this._options, params });
+    return await handler({ context: {}, api: this, name: method, options: this._options, params, resource: null });
+  }
+
+  async _runResource(resourceName, method, params = {}) {
+    const resource = this._resources.get(resourceName);
+    if (!resource) {
+      throw new Error(`Resource '${resourceName}' not found`);
+    }
+    
+    // Find handler (resource first, then API)
+    const handler = resource.implementers.get(method) || this.implementers.get(method);
+    if (!handler) {
+      throw new Error(`No implementation found for method: ${method} on resource: ${resourceName}`);
+    }
+    
+    // Get the resource-aware api and options
+    const { api, options } = this._buildResourceApi(resourceName);
+    
+    return await handler({ 
+      context: {}, 
+      api, 
+      name: method, 
+      options,
+      params,
+      resource: resourceName
+    });
   }
 
   use(plugin, options = {}) {

@@ -43,8 +43,7 @@ export class Api {
     });
     
     // Create proxy for api.resources.resourceName.methodName() syntax
-    const resourcesKey = this.options.resourcesKey || 'resources';
-    this[resourcesKey] = new Proxy({}, {
+    this.resources = new Proxy({}, {
       get: (target, resourceName) => {
         if (!this._resources.has(resourceName)) return undefined;
         
@@ -244,10 +243,9 @@ export class Api {
       ...resourceConfig.implementers
     ]);
     
-    // Build options with resource info using the configured key
-    const resourcesKey = this._options.api.resourcesKey || 'resources';
+    // Build options with resource info
     const options = Object.assign({}, this._options, {
-      [resourcesKey]: Object.freeze(resourceConfig.options)
+      resources: Object.freeze(resourceConfig.options)
     });
     
     return { api, options };
@@ -365,7 +363,7 @@ export class Api {
     if (typeof plugin.name !== 'string' || plugin.name.trim() === '') throw new Error('Plugin must have a non-empty "name" property.')
     if (typeof plugin.install !== 'function') throw new Error(`Plugin '${plugin.name}' must have an 'install' function.`)
 
-    if (plugin.name === 'api' || plugin.name === 'resource') {
+    if (plugin.name === 'api' || plugin.name === 'resources') {
       throw new Error(`Plugin name '${plugin.name}' is reserved.`)
     }
 

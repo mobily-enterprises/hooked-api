@@ -291,7 +291,7 @@ export class Api {
         if (registeredApiName !== this.options.name) {
             for (const otherApiInstance of versionsMap.values()) {
                 if (otherApiInstance._resources.has(name)) {
-                    throw new Error(`Resource name '${name}' is already used by API '${registeredApiName}'. Resource names must be unique across different APIs.`);
+                    throw new Error(`Resource name '${name}' is already used by API '${registeredApiName}' version '${otherApiInstance.options.version}'. Resource names must be globally unique.`);
                 }
             }
         }

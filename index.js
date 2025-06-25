@@ -133,13 +133,22 @@ export class Api {
         return sortedVersions[0]?.[1] || null;
       }
 
+      // Handle exact version requests that don't exist
+      if (!version.match(/[<>^~]/) && semver.valid(version)) {
+        // For non-existent exact versions, find the closest higher version
+        let closestHigher = null;
+        for (const [ver, api] of sortedVersions) {
+          if (semver.gt(ver, version)) {
+            closestHigher = api;
+          }
+        }
+        return closestHigher;
+      }
+
+      // Handle range queries
       for (const [ver, api] of sortedVersions) {
-        if (!version.match(/[<>^~]/) && semver.valid(version)) {
-            if (semver.gte(ver, version)) {
-                return api;
-            }
-        } else if (semver.satisfies(ver, version)) {
-            return api;
+        if (semver.satisfies(ver, version)) {
+          return api;
         }
       }
 
@@ -243,6 +252,19 @@ export class Api {
       ...resourceConfig.implementers
     ]);
     
+    // Create a new run proxy that uses the merged implementers
+    api.run = new Proxy((...args) => api._run(...args), {
+      get: (target, prop) => {
+        if (typeof prop === 'string' && prop !== 'hasOwnProperty' && !prop.match(/^\d+$/)) {
+          return (params) => api._run(prop, params);
+        }
+        return target[prop];
+      },
+      apply: (target, thisArg, args) => {
+        return target(...args);
+      }
+    });
+    
     // Build options with resource info
     const options = Object.assign({}, this._options, {
       resources: Object.freeze(resourceConfig.options)
@@ -330,6 +352,11 @@ export class Api {
       throw new Error(`No implementation found for method: ${method}`);
     }
     
+    // Normalize null params to empty object for consistency
+    if (params === null) {
+      params = {};
+    }
+    
     return await handler({ context: {}, api: this, name: method, options: this._options, params, resource: null });
   }
 
@@ -343,6 +370,11 @@ export class Api {
     const handler = resource.implementers.get(method) || this.implementers.get(method);
     if (!handler) {
       throw new Error(`No implementation found for method: ${method} on resource: ${resourceName}`);
+    }
+    
+    // Normalize null params to empty object for consistency
+    if (params === null) {
+      params = {};
     }
     
     // Get the resource-aware api and options

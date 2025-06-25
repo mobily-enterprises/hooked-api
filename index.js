@@ -167,7 +167,7 @@ export class Api {
     }
   }
 
-  addHook(hookName, pluginName, functionName, params = {}, handler) {
+  addHook(hookName, pluginName, functionName, hookAddOptions = {}, handler) {
     if (this._isRunningHooks) {
       throw new Error('Cannot add hooks while hooks are executing');
     }
@@ -175,7 +175,7 @@ export class Api {
     if (!functionName?.trim()) throw new Error(`Hook '${hookName}' requires a valid functionName`)
     if (typeof handler !== 'function') throw new Error(`Hook '${hookName}' handler must be a function`)
 
-    const placements = [params.beforePlugin, params.afterPlugin, params.beforeFunction, params.afterFunction].filter(Boolean);
+    const placements = [hookAddOptions.beforePlugin, hookAddOptions.afterPlugin, hookAddOptions.beforeFunction, hookAddOptions.afterFunction].filter(Boolean);
     if (placements.length > 1) {
       throw new Error(`Hook '${hookName}' can only specify one placement parameter`)
     }
@@ -201,15 +201,15 @@ export class Api {
     }
 
     let index = -1
-    if (params.beforePlugin) {
-      index = findIndex(handlers, 'pluginName', params.beforePlugin)
-    } else if (params.afterPlugin) {
-      index = findLastIndex(handlers, 'pluginName', params.afterPlugin)
+    if (hookAddOptions.beforePlugin) {
+      index = findIndex(handlers, 'pluginName', hookAddOptions.beforePlugin)
+    } else if (hookAddOptions.afterPlugin) {
+      index = findLastIndex(handlers, 'pluginName', hookAddOptions.afterPlugin)
       if (index !== -1) index++
-    } else if (params.beforeFunction) {
-      index = findIndex(handlers, 'functionName', params.beforeFunction)
-    } else if (params.afterFunction) {
-      index = findIndex(handlers, 'functionName', params.afterFunction)
+    } else if (hookAddOptions.beforeFunction) {
+      index = findIndex(handlers, 'functionName', hookAddOptions.beforeFunction)
+    } else if (hookAddOptions.afterFunction) {
+      index = findIndex(handlers, 'functionName', hookAddOptions.afterFunction)
       if (index !== -1) index++
     }
 
@@ -307,17 +307,17 @@ export class Api {
   customize({ hooks = {}, implementers = {}, constants = {} } = {}) {
     // Process hooks
     for (const [hookName, hookDef] of Object.entries(hooks)) {
-      let handler, functionName, params
+      let handler, functionName, hookAddOptions
       
       if (typeof hookDef === 'function') {
         handler = hookDef
         functionName = hookName
-        params = {}
+        hookAddOptions = {}
       } else if (hookDef && typeof hookDef === 'object') {
         handler = hookDef.handler
         functionName = hookDef.functionName || hookName
         const { handler: _, functionName: __, ...rest } = hookDef
-        params = rest
+        hookAddOptions = rest
       } else {
         throw new Error(`Hook '${hookName}' must be a function or object`)
       }
@@ -326,7 +326,7 @@ export class Api {
         throw new Error(`Hook '${hookName}' must have a function handler`)
       }
       
-      this.addHook(hookName, `api:${this.options.name}`, functionName, params, handler)
+      this.addHook(hookName, `api:${this.options.name}`, functionName, hookAddOptions, handler)
     }
 
     // Process constants
@@ -351,17 +351,17 @@ export class Api {
     
     // Process resource hooks - wrap them to only run for this resource
     for (const [hookName, hookDef] of Object.entries(hooks)) {
-      let handler, functionName, params
+      let handler, functionName, hookAddOptions
       
       if (typeof hookDef === 'function') {
         handler = hookDef
         functionName = hookName
-        params = {}
+        hookAddOptions = {}
       } else if (hookDef && typeof hookDef === 'object') {
         handler = hookDef.handler
         functionName = hookDef.functionName || hookName
         const { handler: _, functionName: __, ...rest } = hookDef
-        params = rest
+        hookAddOptions = rest
       } else {
         throw new Error(`Hook '${hookName}' must be a function or object`)
       }
@@ -378,7 +378,7 @@ export class Api {
         }
       };
       
-      this.addHook(hookName, `resource:${name}`, functionName, params, wrappedHandler)
+      this.addHook(hookName, `resource:${name}`, functionName, hookAddOptions, wrappedHandler)
     }
     
     // Store resource configuration
@@ -449,13 +449,13 @@ export class Api {
     try {
       const pluginApi = Object.create(this);
       
-      pluginApi.addHook = (hookName, functionName, params, handler) => {
-        if (typeof params === 'function' && handler === undefined) {
-          handler = params;
-          params = {};
+      pluginApi.addHook = (hookName, functionName, hookAddOptions, handler) => {
+        if (typeof hookAddOptions === 'function' && handler === undefined) {
+          handler = hookAddOptions;
+          hookAddOptions = {};
         }
         
-        return this.addHook(hookName, plugin.name, functionName, params, handler);
+        return this.addHook(hookName, plugin.name, functionName, hookAddOptions, handler);
       };
       
       this._options[plugin.name] = Object.freeze(options)

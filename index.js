@@ -127,20 +127,33 @@ export class Api {
         return versions.get(version);
       }
 
-      const sortedVersions = Array.from(versions.entries())
-        .sort(([a], [b]) => semver.compare(b, a));
-
+      // Special case for 'latest'
       if (version === 'latest') {
+        const sortedVersions = Array.from(versions.entries())
+          .sort(([a], [b]) => semver.compare(b, a));
         return sortedVersions[0]?.[1] || null;
       }
 
-      // Handle exact version requests that don't exist
-      if (!version.match(/[<>^~]/) && semver.valid(version)) {
+      // Handle empty string explicitly
+      if (version === '') {
+        return null;
+      }
+      
+      // Validate the version string
+      if (!semver.validRange(version)) {
+        return null;
+      }
+
+      // Check if this is an exact version request
+      if (semver.valid(version)) {
         // Exact version was requested but doesn't exist
         return null;
       }
 
       // Handle range queries
+      const sortedVersions = Array.from(versions.entries())
+        .sort(([a], [b]) => semver.compare(b, a));
+      
       for (const [ver, api] of sortedVersions) {
         if (semver.satisfies(ver, version)) {
           return api;

@@ -136,14 +136,8 @@ export class Api {
 
       // Handle exact version requests that don't exist
       if (!version.match(/[<>^~]/) && semver.valid(version)) {
-        // For non-existent exact versions, find the closest higher version
-        let closestHigher = null;
-        for (const [ver, api] of sortedVersions) {
-          if (semver.gt(ver, version)) {
-            closestHigher = api;
-          }
-        }
-        return closestHigher;
+        // Exact version was requested but doesn't exist
+        return null;
       }
 
       // Handle range queries

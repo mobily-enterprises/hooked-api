@@ -310,6 +310,9 @@ export class Api {
 
 
   implement(method, handler) {
+    if (method === null || method === undefined || method === '') {
+      throw new Error('Method name is required');
+    }
     if (typeof handler !== 'function') {
       throw new Error(`Implementation for '${method}' must be a function.`)
     }

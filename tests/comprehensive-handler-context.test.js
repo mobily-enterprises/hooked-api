@@ -346,7 +346,10 @@ describe('Comprehensive Handler Execution and Context Tests', () => {
     it('should provide merged constants in resource context', async () => {
       const api = new Api({ 
         name: 'test', 
-        version: '1.0.0',
+        version: '1.0.0'
+      });
+      
+      api.customize({
         constants: { GLOBAL: 'global', SHARED: 'from global' }
       });
       
@@ -505,8 +508,8 @@ describe('Comprehensive Handler Execution and Context Tests', () => {
       
       assert.equal(result1, 'slow');
       assert.equal(result2, 'fast');
-      // Fast should complete while slow is still running
-      assert.ok(times[1] < times[0]);
+      // Fast should complete first (times[0]) before slow (times[1])
+      assert.ok(times[0] < times[1]);
     });
   });
 

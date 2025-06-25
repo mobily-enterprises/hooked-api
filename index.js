@@ -167,12 +167,19 @@ export class Api {
     }
   }
 
-  addHook(hookName, pluginName, functionName, hookAddOptions = {}, handler) {
+  addHook(hookName, pluginName, functionName, hookAddOptions, handler) {
     if (this._isRunningHooks) {
       throw new Error('Cannot add hooks while hooks are executing');
     }
     if (!pluginName?.trim()) throw new Error(`Hook '${hookName}' requires a valid pluginName`)
     if (!functionName?.trim()) throw new Error(`Hook '${hookName}' requires a valid functionName`)
+    
+    // Allow handler to be the 4th parameter (with hookAddOptions) or 3rd parameter (without)
+    if (typeof hookAddOptions === 'function' && handler === undefined) {
+      handler = hookAddOptions;
+      hookAddOptions = {};
+    }
+    
     if (typeof handler !== 'function') throw new Error(`Hook '${hookName}' handler must be a function`)
 
     const placements = [hookAddOptions.beforePlugin, hookAddOptions.afterPlugin, hookAddOptions.beforeFunction, hookAddOptions.afterFunction].filter(Boolean);

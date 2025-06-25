@@ -4,12 +4,17 @@ let globalRegistry = new Map()
 
 export class Api {
   constructor(options = {}) {
+    // Validate that hooks, implementers, and constants are not in constructor
+    if (options.hooks || options.implementers || options.constants) {
+      throw new Error(
+        'Cannot add hooks, implementers, or constants in constructor. ' +
+        'Use .customize() after adding plugins.'
+      );
+    }
+    
     this.options = {
       name: null,
       version: '1.0.0',
-      hooks: {},
-      implementers: {},
-      constants: {},
       ...options
     }
 
@@ -65,44 +70,6 @@ export class Api {
       }
     });
 
-    for (const [hookName, hookDef] of Object.entries(this.options.hooks || {})) {
-      let handler, functionName, params
-      
-      if (typeof hookDef === 'function') {
-        handler = hookDef
-        functionName = hookName
-        params = {}
-      } else if (hookDef && typeof hookDef === 'object') {
-        handler = hookDef.handler
-        functionName = hookDef.functionName || hookName
-        const { handler: _, functionName: __, ...rest } = hookDef
-        params = rest
-      } else {
-        throw new Error(`Hook '${hookName}' must be a function or object`)
-      }
-      
-      if (typeof handler !== 'function') {
-        throw new Error(`Hook '${hookName}' must have a function handler`)
-      }
-      
-      this.addHook(hookName, `api:${this.options.name}`, functionName, params, handler)
-    }
-
-    if (this.options.constants && typeof this.options.constants === 'object') {
-      for (const constantName in this.options.constants) {
-        if (Object.prototype.hasOwnProperty.call(this.options.constants, constantName)) {
-          this.constants.set(constantName, this.options.constants[constantName]);
-        }
-      }
-    }
-
-    if (this.options.implementers && typeof this.options.implementers === 'object') {
-      for (const methodName in this.options.implementers) {
-        if (Object.prototype.hasOwnProperty.call(this.options.implementers, methodName)) {
-          this.implement(methodName, this.options.implementers[methodName]);
-        }
-      }
-    }
 
     this.register()
   }
@@ -318,6 +285,44 @@ export class Api {
     }
     this.implementers.set(method, handler)
     return this
+  }
+
+  customize({ hooks = {}, implementers = {}, constants = {} } = {}) {
+    // Process hooks
+    for (const [hookName, hookDef] of Object.entries(hooks)) {
+      let handler, functionName, params
+      
+      if (typeof hookDef === 'function') {
+        handler = hookDef
+        functionName = hookName
+        params = {}
+      } else if (hookDef && typeof hookDef === 'object') {
+        handler = hookDef.handler
+        functionName = hookDef.functionName || hookName
+        const { handler: _, functionName: __, ...rest } = hookDef
+        params = rest
+      } else {
+        throw new Error(`Hook '${hookName}' must be a function or object`)
+      }
+      
+      if (typeof handler !== 'function') {
+        throw new Error(`Hook '${hookName}' must have a function handler`)
+      }
+      
+      this.addHook(hookName, `api:${this.options.name}`, functionName, params, handler)
+    }
+
+    // Process constants
+    for (const [constantName, value] of Object.entries(constants)) {
+      this.constants.set(constantName, value);
+    }
+
+    // Process implementers
+    for (const [methodName, handler] of Object.entries(implementers)) {
+      this.implement(methodName, handler);
+    }
+
+    return this;
   }
 
   addResource(name, options = {}, extras = {}) {

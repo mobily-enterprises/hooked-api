@@ -150,42 +150,31 @@ describe('Edge Cases - Hooks', () => {
     }, /Hook error/);
   });
 
-  it('should handle constructor hooks with invalid definitions', () => {
+  it('should not allow hooks in constructor', () => {
     assert.throws(() => {
       new Api({
         name: 'test',
         version: '1.0.0',
         hooks: {
-          test: 'not-a-function'
+          test: () => {}
         }
       });
-    }, /must be a function or object/);
-    
-    assert.throws(() => {
-      new Api({
-        name: 'test',
-        version: '1.0.0',
-        hooks: {
-          test: { notHandler: () => {} }
-        }
-      });
-    }, /must have a function handler/);
-    
-    assert.throws(() => {
-      new Api({
-        name: 'test',
-        version: '1.0.0',
-        hooks: {
-          test: { handler: 'not-a-function' }
-        }
-      });
-    }, /must have a 'handler' function/);
+    }, /Cannot add hooks, implementers, or constants in constructor/);
   });
 
-  it('should handle constructor hooks with complex definitions', () => {
+  it('should handle customize hooks with complex definitions', () => {
     const api = new Api({
       name: 'test',
-      version: '1.0.0',
+      version: '1.0.0'
+    });
+    
+    // Add plugin first so beforePlugin works
+    api.use({
+      name: 'other',
+      install: () => {}
+    });
+    
+    api.customize({
       hooks: {
         simple: () => {},
         complex: {
@@ -228,6 +217,7 @@ describe('Edge Cases - Hooks', () => {
     api.addHook('test', 'p3', 'f4', { afterPlugin: 'p1' }, () => {});
     
     const handlers = api.hooks.get('test');
-    assert.equal(handlers[2].functionName, 'f4'); // Should be after last p1 hook
+    assert.equal(handlers[2].pluginName, 'p3'); // Should be after last p1 hook
+    assert.equal(handlers[2].functionName, 'f4');
   });
 });

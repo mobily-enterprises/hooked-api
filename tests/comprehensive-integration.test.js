@@ -112,7 +112,7 @@ describe('Comprehensive Integration Tests - Real World Scenarios', () => {
       
       api.addResource('cart', { persistent: false }, {
         implementers: {
-          get: ({ context }) => {
+          get: async ({ context }) => {
             await api.runHooks('before:auth', context);
             const userId = context.user.id;
             if (!carts.has(userId)) {

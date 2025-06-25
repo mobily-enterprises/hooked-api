@@ -79,10 +79,21 @@ describe('Comprehensive Error Handling and Edge Cases Tests', () => {
       new Api({ name: 'test', version: '1.0.0' });
       
       // These should not throw, just return null
-      assert.equal(Api.registry.get('test', ''), null);
-      assert.equal(Api.registry.get('test', '...'), null);
-      assert.equal(Api.registry.get('test', 'v1.0.0'), null); // Invalid format
-      assert.equal(Api.registry.get('test', '1.0'), null); // Incomplete
+      assert.equal(Api.registry.get('test', ''), null); // Empty string
+      assert.equal(Api.registry.get('test', '...'), null); // Invalid format
+      
+      // Note: semver behavior:
+      // 'v1.0.0' is normalized to '1.0.0' - treated as exact version that doesn't exist
+      assert.equal(Api.registry.get('test', 'v1.0.0'), null);
+      
+      // '1.0' is treated as range '>=1.0.0 <1.1.0-0' by semver
+      // Since we have 1.0.0, this WILL match
+      assert.equal(Api.registry.get('test', '1.0').options.version, '1.0.0');
+      
+      // Add more invalid inputs
+      assert.equal(Api.registry.get('test', 'invalid'), null);
+      assert.equal(Api.registry.get('test', '1.a.b'), null);
+      assert.equal(Api.registry.get('test', 'abc123'), null);
     });
   });
 
@@ -595,8 +606,9 @@ describe('Comprehensive Error Handling and Edge Cases Tests', () => {
         }
       });
       
-      // Should store them as regular keys
-      assert.equal(api.constants.get('__proto__').polluted, true);
+      // Note: '__proto__' in object literal sets the prototype, not a property
+      // Only constructor and prototype are stored as regular keys
+      assert.equal(api.constants.get('__proto__'), undefined);
       assert.equal(api.constants.get('constructor').polluted, true);
       assert.equal(api.constants.get('prototype').polluted, true);
       

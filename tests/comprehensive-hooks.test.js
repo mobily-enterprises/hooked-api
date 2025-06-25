@@ -57,13 +57,22 @@ describe('Comprehensive Hook System Tests', () => {
       }, /Hook 'test' handler must be a function/);
     });
 
-    it('should handle hooks from constructor options', () => {
+    it('should handle hooks from customize method', () => {
       const handler1 = () => 'handler1';
       const handler2 = () => 'handler2';
       
       const api = new Api({
         name: 'test',
-        version: '1.0.0',
+        version: '1.0.0'
+      });
+      
+      // Add a plugin that 'other' can reference
+      api.use({
+        name: 'other',
+        install: () => {}
+      });
+      
+      api.customize({
         hooks: {
           'simple': handler1,
           'complex': {
@@ -575,25 +584,25 @@ describe('Comprehensive Hook System Tests', () => {
       assert.ok(api.hooks.has(sym));
     });
 
-    it('should handle hooks that modify their own registration', async () => {
+    it('should prevent adding hooks during hook execution', async () => {
       const api = new Api({ name: 'test', version: '1.0.0' });
-      let count = 0;
+      let errorThrown = false;
       
       api.addHook('self-modifying', 'p', 'f', {}, ({ api }) => {
-        count++;
-        if (count === 1) {
-          // Add another hook while executing
-          api.addHook('self-modifying', 'p2', 'f2', {}, () => {
-            count += 10;
-          });
-        }
+        // Should throw error when trying to add hook during execution
+        assert.throws(() => {
+          api.addHook('self-modifying', 'p2', 'f2', {}, () => {});
+        }, {
+          message: 'Cannot add hooks while hooks are executing'
+        });
+        errorThrown = true;
       });
       
       await api.runHooks('self-modifying', {});
-      assert.equal(count, 1); // New hook shouldn't execute in same run
+      assert.equal(errorThrown, true, 'Should have thrown error when adding hook during execution');
       
-      await api.runHooks('self-modifying', {});
-      assert.equal(count, 12); // Now both execute
+      // Verify only one hook exists
+      assert.equal(api.hooks.get('self-modifying').length, 1);
     });
 
     it('should handle circular references in hook parameters', async () => {

@@ -6,7 +6,10 @@ describe('Proxy Syntax', () => {
   it('should support both api.run() syntaxes', async () => {
     const api = new Api({
       name: 'test-proxy',
-      version: '1.0.0',
+      version: '1.0.0'
+    });
+    
+    api.customize({
       implementers: {
         greet: async ({ params }) => `Hello ${params.name}!`
       }
@@ -24,7 +27,10 @@ describe('Proxy Syntax', () => {
   it('should support resource proxy syntax', async () => {
     const api = new Api({
       name: 'test-proxy-resources',
-      version: '1.0.0',
+      version: '1.0.0'
+    });
+    
+    api.customize({
       implementers: {
         identify: async ({ resource, params }) => `${resource}: ${params.id}`
       }

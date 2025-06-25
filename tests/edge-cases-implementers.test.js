@@ -106,13 +106,21 @@ describe('Edge Cases - Implementers', () => {
     assert.equal(result, 'works');
   });
 
-  it('should handle property access for non-string types', () => {
+  it('should handle property access for non-string types', async () => {
     const api = new Api({ name: 'test', version: '1.0.0' });
     
-    assert.equal(api.run[123], undefined);
-    assert.equal(api.run[null], undefined);
-    assert.equal(api.run[undefined], undefined);
-    assert.equal(api.run[{}], undefined);
+    // In JavaScript, numeric/null/undefined keys are converted to strings
+    // So api.run[123] becomes api.run["123"] which returns a function
+    assert.equal(typeof api.run[123], 'function');
+    assert.equal(typeof api.run[null], 'function');
+    assert.equal(typeof api.run[undefined], 'function');
+    assert.equal(typeof api.run[{}], 'function'); // {} becomes "[object Object]"
+    
+    // These can actually be used as method names
+    api.implement('123', () => 'numeric');
+    api.implement('null', () => 'null string');
+    assert.equal(await api.run[123](), 'numeric');
+    assert.equal(await api.run[null](), 'null string');
   });
 
   it('should allow overwriting implementers', async () => {

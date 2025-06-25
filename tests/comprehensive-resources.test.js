@@ -140,6 +140,12 @@ describe('Comprehensive Resource Tests', () => {
     it('should handle complex resource hook definitions', () => {
       const api = new Api({ name: 'test', version: '1.0.0' });
       
+      // Add a plugin so beforePlugin works
+      api.use({
+        name: 'other-plugin',
+        install: () => {}
+      });
+      
       const handler = () => {};
       const hooks = {
         'simple': handler,

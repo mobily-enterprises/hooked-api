@@ -90,11 +90,14 @@ describe('Comprehensive Hook System Tests', () => {
       assert.equal(api.hooks.get('complex')[0].functionName, 'customName');
     });
 
-    it('should validate constructor hook definitions', () => {
+    it('should validate customize hook definitions', () => {
+      const api = new Api({
+        name: 'test',
+        version: '1.0.0'
+      });
+      
       assert.throws(() => {
-        new Api({
-          name: 'test',
-          version: '1.0.0',
+        api.customize({
           hooks: {
             'invalid': 123
           }
@@ -102,9 +105,7 @@ describe('Comprehensive Hook System Tests', () => {
       }, /Hook 'invalid' must be a function or object/);
       
       assert.throws(() => {
-        new Api({
-          name: 'test',
-          version: '1.0.0',
+        api.customize({
           hooks: {
             'invalid': { handler: 'not a function' }
           }

@@ -40,7 +40,10 @@ describe('Resources', () => {
   it('should access resources through proxy', async () => {
     const api = new Api({
       name: 'test-resources',
-      version: '1.0.0',
+      version: '1.0.0'
+    });
+    
+    api.customize({
       implementers: {
         test: async ({ resource }) => `Called on ${resource || 'API'}`
       }

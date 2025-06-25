@@ -150,16 +150,20 @@ describe('Edge Cases - Hooks', () => {
     }, /Hook error/);
   });
 
-  it('should not allow hooks in constructor', () => {
-    assert.throws(() => {
-      new Api({
-        name: 'test',
-        version: '1.0.0',
-        hooks: {
-          test: () => {}
-        }
-      });
-    }, /Cannot add hooks, implementers, or constants in constructor/);
+  it('should require customize method for hooks', () => {
+    const api = new Api({
+      name: 'test',
+      version: '1.0.0'
+    });
+    
+    // Hooks should be added via customize
+    api.customize({
+      hooks: {
+        test: () => {}
+      }
+    });
+    
+    assert.ok(api.hooks.has('test'));
   });
 
   it('should handle customize hooks with complex definitions', () => {

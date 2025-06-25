@@ -572,33 +572,26 @@ describe('Comprehensive Error Handling and Edge Cases Tests', () => {
   });
 
   describe('Constants Error Handling', () => {
-    it('should handle invalid constants in constructor', () => {
-      // Constants can be any type, so mainly testing it doesn't break
-      const weirdConstants = [
-        null,
-        undefined,
-        'string',
-        123,
-        true,
-        [],
-        () => {}
-      ];
+    it('should handle constants through customize method', () => {
+      const api = new Api({
+        name: 'test',
+        version: '1.0.0'
+      });
       
-      for (const constants of weirdConstants) {
-        assert.doesNotThrow(() => {
-          new Api({
-            name: 'test',
-            version: '1.0.0',
-            constants
-          });
-        });
-      }
+      api.customize({
+        constants: { KEY: 'value' }
+      });
+      
+      assert.equal(api.constants.get('KEY'), 'value');
     });
 
     it('should handle prototype pollution attempts via constants', () => {
       const api = new Api({
         name: 'test',
-        version: '1.0.0',
+        version: '1.0.0'
+      });
+      
+      api.customize({
         constants: {
           '__proto__': { polluted: true },
           'constructor': { polluted: true },
@@ -797,12 +790,14 @@ describe('Comprehensive Error Handling and Edge Cases Tests', () => {
         api.addHook('modify', `p${i}`, `f${i}`, {}, ({ api }) => {
           // Try to modify during execution
           if (i === 2) {
-            api.addHook('modify', 'new', 'func', {}, () => {});
+            assert.throws(() => {
+              api.addHook('modify', 'new', 'func', {}, () => {});
+            }, /Cannot add hooks while hooks are executing/);
           }
         });
       }
       
-      await assert.doesNotReject(api.runHooks('modify', {}));
+      await api.runHooks('modify', {});
     });
 
     it('should handle api modification during plugin install', () => {

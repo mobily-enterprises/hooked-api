@@ -226,7 +226,10 @@ describe('Comprehensive Handler Execution and Context Tests', () => {
     it('should access constants from handler', async () => {
       const api = new Api({ 
         name: 'test', 
-        version: '1.0.0',
+        version: '1.0.0'
+      });
+      
+      api.customize({
         constants: {
           MAX_RETRIES: 3,
           TIMEOUT: 5000

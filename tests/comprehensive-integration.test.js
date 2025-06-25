@@ -12,7 +12,10 @@ describe('Comprehensive Integration Tests - Real World Scenarios', () => {
       // Create main API
       const api = new Api({
         name: 'ecommerce',
-        version: '1.0.0',
+        version: '1.0.0'
+      });
+      
+      api.customize({
         constants: {
           TAX_RATE: 0.08,
           MAX_CART_ITEMS: 100,
@@ -318,7 +321,10 @@ describe('Comprehensive Integration Tests - Real World Scenarios', () => {
     it('should implement complete blog functionality with comments', async () => {
       const blog = new Api({
         name: 'blog',
-        version: '2.0.0',
+        version: '2.0.0'
+      });
+      
+      blog.customize({
         constants: {
           MAX_POST_LENGTH: 10000,
           MAX_COMMENT_LENGTH: 1000,

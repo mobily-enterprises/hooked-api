@@ -373,11 +373,6 @@ export class Api {
       throw new Error(`No implementation found for method: ${method}`);
     }
     
-    // Normalize null params to empty object for consistency
-    if (params === null) {
-      params = {};
-    }
-    
     return await handler({ context: {}, api: this, name: method, options: this._options, params, resource: null });
   }
 
@@ -391,11 +386,6 @@ export class Api {
     const handler = resource.implementers.get(method) || this.implementers.get(method);
     if (!handler) {
       throw new Error(`No implementation found for method: ${method} on resource: ${resourceName}`);
-    }
-    
-    // Normalize null params to empty object for consistency
-    if (params === null) {
-      params = {};
     }
     
     // Get the resource-aware api and options

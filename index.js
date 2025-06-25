@@ -255,7 +255,7 @@ export class Api {
     // Create a new run proxy that uses the merged implementers
     api.run = new Proxy((...args) => api._run(...args), {
       get: (target, prop) => {
-        if (typeof prop === 'string' && prop !== 'hasOwnProperty' && !prop.match(/^\d+$/)) {
+        if (typeof prop === 'string') {
           return (params) => api._run(prop, params);
         }
         return target[prop];

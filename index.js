@@ -18,7 +18,14 @@ export class Api {
     }
 
     this.hooks = new Map()
-    this.constants = new Map()
+    this._constantsMap = new Map()
+    this.constants = new Proxy({}, {
+      get: (target, prop) => this._constantsMap.get(prop),
+      set: (target, prop, value) => {
+        this._constantsMap.set(prop, value);
+        return true;
+      }
+    })
     this.implementers = new Map()
     this._installedPlugins = new Set()
     this._resources = new Map()
@@ -30,6 +37,10 @@ export class Api {
     // Create proxy for api.run.methodName() syntax
     this.run = new Proxy((...args) => this._run(...args), {
       get: (target, prop) => {
+        // Prevent access to internal methods and prototype pollution
+        if (prop === '_run' || prop === 'hooks' || prop === '__proto__') {
+          return undefined;
+        }
         // Only non-numeric string props, so that api.run[123] returns undefined
         if (typeof prop === 'string' && !prop.match(/^\d+$/)) {
           return (params) => this._run(prop, params);
@@ -44,6 +55,11 @@ export class Api {
     // Create proxy for api.resources.resourceName.methodName() syntax
     this.resources = new Proxy({}, {
       get: (target, resourceName) => {
+        // Prevent prototype pollution and symbol-based bypasses
+        if (typeof resourceName === 'symbol' || resourceName === 'constructor' || resourceName === '__proto__') {
+          return undefined;
+        }
+        
         if (!this._resources.has(resourceName)) return undefined;
         
         // Return another proxy for the methods
@@ -217,10 +233,17 @@ export class Api {
     const api = Object.create(this);
     
     // Override constants: resource constants take precedence
-    api.constants = new Map([
-      ...this.constants,
+    const mergedConstants = new Map([
+      ...this._constantsMap,
       ...resourceConfig.constants
     ]);
+    api.constants = new Proxy({}, {
+      get: (target, prop) => mergedConstants.get(prop),
+      set: (target, prop, value) => {
+        mergedConstants.set(prop, value);
+        return true;
+      }
+    });
     
     // Override implementers: resource implementers take precedence
     api.implementers = new Map([
@@ -308,7 +331,7 @@ export class Api {
 
     // Process constants
     for (const [constantName, value] of Object.entries(constants)) {
-      this.constants.set(constantName, value);
+      this.constants[constantName] = value;
     }
 
     // Process implementers
@@ -360,7 +383,7 @@ export class Api {
     
     // Store resource configuration
     this._resources.set(name, {
-      options: Object.freeze(options),
+      options: Object.freeze({ ...options }),
       implementers: new Map(Object.entries(implementers)),
       constants: new Map(Object.entries(constants))
     });

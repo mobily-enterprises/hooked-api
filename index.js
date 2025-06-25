@@ -198,10 +198,12 @@ export class Api {
     }
 
     if (index === -1) {
-      throw new Error(`Hook '${hookName}' placement target not found`)
+      // Warn about missing placement target and add to end
+      console.warn(`Hook '${hookName}' placement target not found. Adding to end of hook list.`)
+      handlers.push(entry)
+    } else {
+      handlers.splice(index, 0, entry)
     }
-
-    handlers.splice(index, 0, entry)
     return this
   }
 

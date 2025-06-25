@@ -33,7 +33,8 @@ export class Api {
     // Create proxy for api.run.methodName() syntax
     this.run = new Proxy((...args) => this._run(...args), {
       get: (target, prop) => {
-        if (typeof prop === 'string') {
+        // Only non-numeric string props, so that api.run[123] returns undefined
+        if (typeof prop === 'string' && !prop.match(/^\d+$/)) {
           return (params) => this._run(prop, params);
         }
         return target[prop];
@@ -50,9 +51,12 @@ export class Api {
         
         // Return another proxy for the methods
         return new Proxy((...args) => this._runResource(resourceName, ...args), {
-          get: (target, methodName) => {
-            if (typeof methodName !== 'string') return undefined;
-            return (params) => this._runResource(resourceName, methodName, params);
+          get: (target, prop) => {
+            // Only non-numeric string props, so that resources.users[123] returns undefined
+            if (typeof prop === 'string' && !prop.match(/^\d+$/)) {
+              return (params) => this._runResource(resourceName, prop, params);
+            }
+            return target[prop];
           },
           apply: (target, thisArg, args) => {
             return target(...args);
@@ -266,7 +270,8 @@ export class Api {
     // Create a new run proxy that uses the merged implementers
     api.run = new Proxy((...args) => api._run(...args), {
       get: (target, prop) => {
-        if (typeof prop === 'string') {
+        // Only non-numeric string props, so that api.run[123] returns undefined
+        if (typeof prop === 'string' && !prop.match(/^\d+$/)) {
           return (params) => api._run(prop, params);
         }
         return target[prop];

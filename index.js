@@ -28,6 +28,7 @@ export class Api {
     this._options = {
       api: Object.freeze(this.options)
     }
+    this._isRunningHooks = false
     
     // Create proxy for api.run.methodName() syntax
     this.run = new Proxy((...args) => this._run(...args), {
@@ -181,6 +182,9 @@ export class Api {
   }
 
   addHook(hookName, pluginName, functionName, params = {}, handler) {
+    if (this._isRunningHooks) {
+      throw new Error('Cannot add hooks while hooks are executing');
+    }
     if (!pluginName?.trim()) throw new Error(`Hook '${hookName}' requires a valid pluginName`)
     if (!functionName?.trim()) throw new Error(`Hook '${hookName}' requires a valid functionName`)
     if (typeof handler !== 'function') throw new Error(`Hook '${hookName}' handler must be a function`)
@@ -277,12 +281,17 @@ export class Api {
     const handlers = this.hooks.get(name) || []
     const { api, options } = resource ? this._buildResourceApi(resource) : { api: this, options: this._options };
     
-    for (const { handler, pluginName, functionName } of handlers) {
-      const result = await handler({ context, api, name, options, params: {}, resource });
-      if (result === false) {
-        console.log(`Hook '${name}' handler from plugin '${pluginName}' (function: '${functionName}') stopped the chain.`)
-        break
+    this._isRunningHooks = true;
+    try {
+      for (const { handler, pluginName, functionName } of handlers) {
+        const result = await handler({ context, api, name, options, params: {}, resource });
+        if (result === false) {
+          console.log(`Hook '${name}' handler from plugin '${pluginName}' (function: '${functionName}') stopped the chain.`)
+          break
+        }
       }
+    } finally {
+      this._isRunningHooks = false;
     }
     return context;
   }

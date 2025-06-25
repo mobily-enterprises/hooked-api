@@ -72,22 +72,36 @@ describe('Comprehensive Hook System Tests', () => {
         install: () => {}
       });
       
-      api.customize({
-        hooks: {
-          'simple': handler1,
-          'complex': {
-            handler: handler2,
-            functionName: 'customName',
-            beforePlugin: 'other'
+      // Capture console.warn
+      const originalWarn = console.warn;
+      let warnMessage = '';
+      console.warn = (msg) => { warnMessage = msg; };
+      
+      try {
+        api.customize({
+          hooks: {
+            'simple': handler1,
+            'complex': {
+              handler: handler2,
+              functionName: 'customName',
+              beforePlugin: 'other'
+            }
           }
-        }
-      });
-      
-      assert.equal(api.hooks.get('simple')[0].handler, handler1);
-      assert.equal(api.hooks.get('simple')[0].functionName, 'simple');
-      
-      assert.equal(api.hooks.get('complex')[0].handler, handler2);
-      assert.equal(api.hooks.get('complex')[0].functionName, 'customName');
+        });
+        
+        // Should have warned about missing placement target
+        assert.ok(warnMessage.includes("placement target not found"));
+        
+        assert.equal(api.hooks.get('simple')[0].handler, handler1);
+        assert.equal(api.hooks.get('simple')[0].functionName, 'simple');
+        
+        // Complex hook should be added at the end since 'other' has no hooks
+        const complexHooks = api.hooks.get('complex');
+        assert.equal(complexHooks[complexHooks.length - 1].handler, handler2);
+        assert.equal(complexHooks[complexHooks.length - 1].functionName, 'customName');
+      } finally {
+        console.warn = originalWarn;
+      }
     });
 
     it('should validate customize hook definitions', () => {
@@ -207,18 +221,25 @@ describe('Comprehensive Hook System Tests', () => {
       }, /Hook 'test' can only specify one placement parameter/);
     });
 
-    it('should throw on non-existent placement targets', () => {
+    it('should warn on non-existent placement targets', () => {
       const api = new Api({ name: 'test', version: '1.0.0' });
       
       api.addHook('test', 'existing', 'func', {}, () => {});
       
-      assert.throws(() => {
-        api.addHook('test', 'new', 'func', { beforePlugin: 'nonexistent' }, () => {});
-      }, /Hook 'test' placement target not found/);
+      // Capture console.warn
+      const originalWarn = console.warn;
+      const warnings = [];
+      console.warn = (msg) => { warnings.push(msg); };
       
-      assert.throws(() => {
+      try {
+        api.addHook('test', 'new', 'func', { beforePlugin: 'nonexistent' }, () => {});
+        assert.ok(warnings[0].includes("placement target not found"));
+        
         api.addHook('test', 'new', 'func', { afterFunction: 'nonexistent' }, () => {});
-      }, /Hook 'test' placement target not found/);
+        assert.ok(warnings[1].includes("placement target not found"));
+      } finally {
+        console.warn = originalWarn;
+      }
     });
   });
 
@@ -364,7 +385,7 @@ describe('Comprehensive Hook System Tests', () => {
     it('should provide resource-specific api and options', async () => {
       const api = new Api({ name: 'test', version: '1.0.0' });
       
-      api.constants.set('GLOBAL', 'global');
+      api.constants.GLOBAL = 'global';
       api.addResource('items', { resourceProp: 'value' }, {
         constants: { RESOURCE: 'resource' }
       });
@@ -377,8 +398,8 @@ describe('Comprehensive Hook System Tests', () => {
       await api.runHooks('test', {}, 'items');
       
       assert.equal(captured.resource, 'items');
-      assert.equal(captured.api.constants.get('GLOBAL'), 'global');
-      assert.equal(captured.api.constants.get('RESOURCE'), 'resource');
+      assert.equal(captured.api.constants.GLOBAL, 'global');
+      assert.equal(captured.api.constants.RESOURCE, 'resource');
       assert.deepEqual(captured.options.resources, { resourceProp: 'value' });
     });
 

@@ -6,7 +6,10 @@ describe('Resource Overrides', () => {
   it('should override implementers at resource level', async () => {
     const api = new Api({
       name: 'test-overrides',
-      version: '1.0.0',
+      version: '1.0.0'
+    });
+    
+    api.customize({
       implementers: {
         getMessage: async () => 'API default message'
       }
@@ -30,12 +33,15 @@ describe('Resource Overrides', () => {
   it('should override constants at resource level', async () => {
     const api = new Api({
       name: 'test-overrides-constants',
-      version: '1.0.0',
+      version: '1.0.0'
+    });
+    
+    api.customize({
       constants: {
         tableName: 'default_table'
       },
       implementers: {
-        getTable: async ({ api }) => api.constants.get('tableName')
+        getTable: async ({ api }) => api.constants.tableName
       }
     });
     

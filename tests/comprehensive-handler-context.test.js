@@ -238,9 +238,9 @@ describe('Comprehensive Handler Execution and Context Tests', () => {
       
       api.implement('useConstants', ({ api }) => {
         return {
-          retries: api.constants.get('MAX_RETRIES'),
-          timeout: api.constants.get('TIMEOUT'),
-          missing: api.constants.get('NONEXISTENT')
+          retries: api.constants.MAX_RETRIES,
+          timeout: api.constants.TIMEOUT,
+          missing: api.constants.NONEXISTENT
         };
       });
       
@@ -360,9 +360,9 @@ describe('Comprehensive Handler Execution and Context Tests', () => {
         },
         implementers: {
           getConstants: ({ api }) => ({
-            global: api.constants.get('GLOBAL'),
-            resource: api.constants.get('RESOURCE'),
-            shared: api.constants.get('SHARED')
+            global: api.constants.GLOBAL,
+            resource: api.constants.RESOURCE,
+            shared: api.constants.SHARED
           })
         }
       });
@@ -712,7 +712,7 @@ describe('Comprehensive Handler Execution and Context Tests', () => {
       api.implement('undefinedAccess', ({ options, api, context }) => {
         return {
           undefinedOption: options.nonExistent,
-          undefinedConstant: api.constants.get('nonExistent'),
+          undefinedConstant: api.constants.nonExistent,
           undefinedContext: context.nonExistent
         };
       });

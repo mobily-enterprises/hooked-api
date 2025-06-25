@@ -10,7 +10,10 @@ describe('Resource-Specific Hooks', () => {
   it('should run hooks only for specific resource', async () => {
     const api = new Api({
       name: 'test-hooks',
-      version: '1.0.0',
+      version: '1.0.0'
+    });
+    
+    api.customize({
       implementers: {
         process: async ({ api, resource }) => {
           let context = { messages: [] };
@@ -58,7 +61,10 @@ describe('Resource-Specific Hooks', () => {
   it('should pass resource options to handlers', async () => {
     const api = new Api({
       name: 'test-options',
-      version: '1.0.0',
+      version: '1.0.0'
+    });
+    
+    api.customize({
       implementers: {
         getSchema: async ({ options, resource }) => {
           return resource ? options.resources.schema : null;

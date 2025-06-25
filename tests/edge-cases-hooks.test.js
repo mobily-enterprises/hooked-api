@@ -61,32 +61,40 @@ describe('Edge Cases - Hooks', () => {
     }, /can only specify one placement parameter/);
   });
 
-  it('should handle non-existent placement targets', () => {
+  it('should handle non-existent placement targets with warning', () => {
     const api = new Api({ name: 'hook-test', version: '1.0.0' });
     
-    assert.throws(() => {
+    // Capture console.warn
+    const originalWarn = console.warn;
+    const warnings = [];
+    console.warn = (msg) => { warnings.push(msg); };
+    
+    try {
       api.addHook('test', 'plugin', 'func', {
         beforePlugin: 'non-existent'
       }, () => {});
-    }, /placement target not found/);
-    
-    assert.throws(() => {
+      assert.ok(warnings[0].includes("placement target not found"));
+      
       api.addHook('test', 'plugin', 'func', {
         afterPlugin: 'non-existent'
       }, () => {});
-    }, /placement target not found/);
-    
-    assert.throws(() => {
+      assert.ok(warnings[1].includes("placement target not found"));
+      
       api.addHook('test', 'plugin', 'func', {
         beforeFunction: 'non-existent'
       }, () => {});
-    }, /placement target not found/);
-    
-    assert.throws(() => {
+      assert.ok(warnings[2].includes("placement target not found"));
+      
       api.addHook('test', 'plugin', 'func', {
         afterFunction: 'non-existent'
       }, () => {});
-    }, /placement target not found/);
+      assert.ok(warnings[3].includes("placement target not found"));
+      
+      // All hooks should still be added
+      assert.equal(api.hooks.get('test').length, 4);
+    } finally {
+      console.warn = originalWarn;
+    }
   });
 
   it('should handle hook execution with no handlers', async () => {

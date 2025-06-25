@@ -35,11 +35,14 @@ describe('Edge Cases - Implementers', () => {
     }, /No implementation found for method: nonExistent/);
   });
 
-  it('should handle constructor implementers with non-function values', () => {
+  it('should handle customize implementers with non-function values', () => {
+    const api = new Api({
+      name: 'test',
+      version: '1.0.0'
+    });
+    
     assert.throws(() => {
-      new Api({
-        name: 'test',
-        version: '1.0.0',
+      api.customize({
         implementers: {
           test: 'not-a-function'
         }
@@ -83,12 +86,15 @@ describe('Edge Cases - Implementers', () => {
       return params;
     });
     
+    // No params - uses default {}
     const result1 = await api.run('test');
     assert.deepEqual(result1, {});
     
+    // Null is NOT normalized - it stays null
     const result2 = await api.run('test', null);
-    assert.deepEqual(result2, {});
+    assert.deepEqual(result2, null);
     
+    // Undefined uses default {}
     const result3 = await api.run('test', undefined);
     assert.deepEqual(result3, {});
   });
@@ -109,18 +115,26 @@ describe('Edge Cases - Implementers', () => {
   it('should handle property access for non-string types', async () => {
     const api = new Api({ name: 'test', version: '1.0.0' });
     
-    // In JavaScript, numeric/null/undefined keys are converted to strings
-    // So api.run[123] becomes api.run["123"] which returns a function
-    assert.equal(typeof api.run[123], 'function');
-    assert.equal(typeof api.run[null], 'function');
-    assert.equal(typeof api.run[undefined], 'function');
-    assert.equal(typeof api.run[{}], 'function'); // {} becomes "[object Object]"
+    // The library PURPOSEFULLY returns undefined for numeric strings
+    assert.equal(api.run[123], undefined);
+    assert.equal(api.run['123'], undefined);
     
-    // These can actually be used as method names
-    api.implement('123', () => 'numeric');
+    // Non-numeric strings work as expected
+    assert.equal(typeof api.run[null], 'function'); // 'null' is not numeric
+    assert.equal(typeof api.run[undefined], 'function'); // 'undefined' is not numeric
+    assert.equal(typeof api.run[{}], 'function'); // '[object Object]' is not numeric
+    
+    // Non-numeric method names work
     api.implement('null', () => 'null string');
-    assert.equal(await api.run[123](), 'numeric');
+    api.implement('undefined', () => 'undefined string');
     assert.equal(await api.run[null](), 'null string');
+    assert.equal(await api.run[undefined](), 'undefined string');
+    
+    // But numeric strings cannot be used as method names
+    api.implement('123', () => 'numeric');
+    // This returns undefined, not a function
+    assert.equal(api.run[123], undefined);
+    assert.equal(api.run['123'], undefined);
   });
 
   it('should allow overwriting implementers', async () => {

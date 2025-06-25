@@ -350,7 +350,7 @@ describe('Comprehensive API Creation Tests', () => {
       const api = new Api({ name: 'test', version: '1.0.0' });
       
       assert.ok(api.hooks instanceof Map);
-      assert.ok(api.constants instanceof Map);
+      assert.ok(typeof api.constants === 'object'); // Now a proxy
       assert.ok(api.implementers instanceof Map);
       assert.ok(api._installedPlugins instanceof Set);
       assert.ok(api._resources instanceof Map);

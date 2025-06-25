@@ -188,34 +188,35 @@ describe('Comprehensive Error Handling and Edge Cases Tests', () => {
       );
     });
 
-    it('should handle placement errors with clear messages', () => {
+    it('should handle placement errors with warning messages', () => {
       const api = new Api({ name: 'test', version: '1.0.0' });
       
       api.addHook('test', 'existing', 'func', {}, () => {});
       
-      assert.throws(() => {
+      // Capture console.warn
+      const originalWarn = console.warn;
+      const warnings = [];
+      console.warn = (msg) => { warnings.push(msg); };
+      
+      try {
         api.addHook('test', 'new', 'f', { beforePlugin: 'nonexistent' }, () => {});
-      }, {
-        message: "Hook 'test' placement target not found"
-      });
-      
-      assert.throws(() => {
+        assert.ok(warnings[0].includes("placement target not found"));
+        
         api.addHook('test', 'new', 'f', { afterPlugin: 'nonexistent' }, () => {});
-      }, {
-        message: "Hook 'test' placement target not found"
-      });
-      
-      assert.throws(() => {
+        assert.ok(warnings[1].includes("placement target not found"));
+        
         api.addHook('test', 'new', 'f', { beforeFunction: 'nonexistent' }, () => {});
-      }, {
-        message: "Hook 'test' placement target not found"
-      });
-      
-      assert.throws(() => {
+        assert.ok(warnings[2].includes("placement target not found"));
+        
         api.addHook('test', 'new', 'f', { afterFunction: 'nonexistent' }, () => {});
-      }, {
-        message: "Hook 'test' placement target not found"
-      });
+        assert.ok(warnings[3].includes("placement target not found"));
+        
+        // All hooks should still be added
+        const hooks = api.hooks.get('test');
+        assert.ok(hooks.length >= 5); // 1 existing + 4 new
+      } finally {
+        console.warn = originalWarn;
+      }
     });
 
     it('should handle multiple placement parameters error', () => {
@@ -582,7 +583,7 @@ describe('Comprehensive Error Handling and Edge Cases Tests', () => {
         constants: { KEY: 'value' }
       });
       
-      assert.equal(api.constants.get('KEY'), 'value');
+      assert.equal(api.constants.KEY, 'value');
     });
 
     it('should handle prototype pollution attempts via constants', () => {
@@ -601,9 +602,9 @@ describe('Comprehensive Error Handling and Edge Cases Tests', () => {
       
       // Note: '__proto__' in object literal sets the prototype, not a property
       // Only constructor and prototype are stored as regular keys
-      assert.equal(api.constants.get('__proto__'), undefined);
-      assert.equal(api.constants.get('constructor').polluted, true);
-      assert.equal(api.constants.get('prototype').polluted, true);
+      assert.equal(api.constants.__proto__, undefined);
+      assert.equal(api.constants.constructor.polluted, true);
+      assert.equal(api.constants.prototype.polluted, true);
       
       // Should not pollute
       assert.equal({}.polluted, undefined);

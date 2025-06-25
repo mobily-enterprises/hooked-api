@@ -35,7 +35,7 @@ describe('Comprehensive Integration Tests - Real World Scenarios', () => {
               throw new Error('User already exists');
             }
             const user = {
-              id: Date.now(),
+              id: Date.now() + Math.random(),
               email: params.email,
               name: params.name,
               password: params.password // In real app, would hash
@@ -73,7 +73,7 @@ describe('Comprehensive Integration Tests - Real World Scenarios', () => {
         implementers: {
           create: ({ params, context }) => {
             const product = {
-              id: Date.now(),
+              id: Date.now() + Math.random(), // Add random to avoid ID collisions
               name: params.name,
               price: params.price,
               stock: params.stock || 0,
@@ -115,8 +115,11 @@ describe('Comprehensive Integration Tests - Real World Scenarios', () => {
       
       api.addResource('cart', { persistent: false }, {
         implementers: {
-          get: async ({ context }) => {
+          get: async ({ params, api }) => {
+            // Create context from params
+            const context = { token: params.token };
             await api.runHooks('before:auth', context);
+            
             const userId = context.user.id;
             if (!carts.has(userId)) {
               carts.set(userId, { items: [], userId });
@@ -124,8 +127,11 @@ describe('Comprehensive Integration Tests - Real World Scenarios', () => {
             return carts.get(userId);
           },
           
-          addItem: async ({ params, context, api }) => {
+          addItem: async ({ params, api }) => {
+            // Create context from params
+            const context = { token: params.token };
             await api.runHooks('before:auth', context);
+            
             const userId = context.user.id;
             
             // Check product exists and has stock
@@ -151,15 +157,18 @@ describe('Comprehensive Integration Tests - Real World Scenarios', () => {
               });
             }
             
-            if (cart.items.length > api.constants.get('MAX_CART_ITEMS')) {
+            if (cart.items.length > api.constants.MAX_CART_ITEMS) {
               throw new Error('Cart limit exceeded');
             }
             
             return cart;
           },
           
-          checkout: async ({ context, api }) => {
+          checkout: async ({ params, api }) => {
+            // Create context from params
+            const context = { token: params.token };
             await api.runHooks('before:auth', context);
+            
             const userId = context.user.id;
             const cart = carts.get(userId);
             
@@ -173,18 +182,18 @@ describe('Comprehensive Integration Tests - Real World Scenarios', () => {
               subtotal += item.price * item.quantity;
             }
             
-            const tax = subtotal * api.constants.get('TAX_RATE');
+            const tax = subtotal * api.constants.TAX_RATE;
             const total = subtotal + tax;
             
             // Create order
             const order = {
-              id: Date.now(),
+              id: Date.now() + Math.random(),
               userId,
               items: [...cart.items],
               subtotal,
               tax,
               total,
-              currency: api.constants.get('CURRENCY'),
+              currency: api.constants.CURRENCY,
               status: 'pending',
               createdAt: new Date()
             };
@@ -200,18 +209,18 @@ describe('Comprehensive Integration Tests - Real World Scenarios', () => {
             // Clear cart
             cart.items = [];
             
-            // Run post-order hooks
-            await api.runHooks('after:order', { ...context, order });
+            // Run post-order hooks with order in context
+            await api.runHooks('after:order', { order, user: context.user });
             
             return order;
           }
         },
         hooks: {
-          'before:addItem': ({ context }) => {
-            console.log(`Adding item to cart for user ${context.user?.id}`);
+          'before:addItem': ({ params }) => {
+            console.log(`Adding item to cart`);
           },
           'after:order': ({ context }) => {
-            console.log(`Order ${context.order.id} created for ${context.order.total} ${context.order.currency}`);
+            console.log(`Order ${context.order?.id} created for ${context.order?.total} ${context.order?.currency}`);
           }
         }
       });
@@ -283,24 +292,26 @@ describe('Comprehensive Integration Tests - Real World Scenarios', () => {
       assert.equal(products.length, 2);
       
       // 5. Add to cart
-      const context = { token: session.token };
+      const tokenParam = { token: session.token };
       
       await api.resources.cart.addItem({
         productId: product1.id,
-        quantity: 1
-      }, context);
+        quantity: 1,
+        ...tokenParam
+      });
       
       await api.resources.cart.addItem({
         productId: product2.id,
-        quantity: 2
-      }, context);
+        quantity: 2,
+        ...tokenParam
+      });
       
       // 6. Check cart
-      const cart = await api.resources.cart.get(context);
+      const cart = await api.resources.cart.get(tokenParam);
       assert.equal(cart.items.length, 2);
       
       // 7. Checkout
-      const order = await api.resources.cart.checkout(context);
+      const order = await api.resources.cart.checkout(tokenParam);
       assert.equal(order.items.length, 2);
       assert.equal(order.subtotal, 1059.97);
       assert.equal(order.tax.toFixed(2), '84.80');
@@ -372,7 +383,7 @@ describe('Comprehensive Integration Tests - Real World Scenarios', () => {
             await api.runHooks('before:publish', context);
             
             const post = {
-              id: Date.now(),
+              id: Date.now() + Math.random(),
               title: params.title,
               content: params.content,
               author: params.author,
@@ -402,7 +413,7 @@ describe('Comprehensive Integration Tests - Real World Scenarios', () => {
             return post;
           },
           
-          list: ({ params }) => {
+          list: ({ params, api }) => {
             const allPosts = Array.from(posts.values());
             let filtered = allPosts;
             
@@ -420,7 +431,7 @@ describe('Comprehensive Integration Tests - Real World Scenarios', () => {
             
             // Pagination
             const page = params.page || 1;
-            const perPage = params.perPage || api.constants.get('POSTS_PER_PAGE');
+            const perPage = params.perPage || api.constants.POSTS_PER_PAGE;
             const start = (page - 1) * perPage;
             const end = start + perPage;
             
@@ -500,7 +511,7 @@ describe('Comprehensive Integration Tests - Real World Scenarios', () => {
             await api.runHooks('before:publish', context);
             
             const comment = {
-              id: Date.now(),
+              id: Date.now() + Math.random(),
               postId: params.postId,
               author: params.author,
               content: params.content,
@@ -679,7 +690,7 @@ describe('Comprehensive Integration Tests - Real World Scenarios', () => {
           
           api.implement('createTenant', ({ params }) => {
             const tenant = {
-              id: `tenant-${Date.now()}`,
+              id: `tenant-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
               name: params.name,
               plan: params.plan || 'free',
               createdAt: new Date(),
@@ -707,42 +718,62 @@ describe('Comprehensive Integration Tests - Real World Scenarios', () => {
       // Add per-tenant data storage
       saas.addResource('data', { isolated: true }, {
         implementers: {
-          set: async ({ params, context, api }) => {
+          set: async ({ params, api }) => {
+            // Create context from params
+            const context = { tenantId: params.tenantId };
             await api.runHooks('before:operation', context);
             
             const tenantStorage = tenantData.get(context.tenantId);
+            if (!tenantStorage) throw new Error(`Tenant storage not found for ${context.tenantId}`);
             tenantStorage.set(params.key, params.value);
             
-            return { key: params.key, value: params.value };
+            const result = { key: params.key, value: params.value };
+            await api.runHooks('after:operation', context);
+            return result;
           },
           
-          get: async ({ params, context, api }) => {
+          get: async ({ params, api }) => {
+            // Create context from params
+            const context = { tenantId: params.tenantId };
             await api.runHooks('before:operation', context);
             
             const tenantStorage = tenantData.get(context.tenantId);
+            if (!tenantStorage) throw new Error(`Tenant storage not found for ${context.tenantId}`);
             const value = tenantStorage.get(params.key);
             
             if (value === undefined) throw new Error('Key not found');
             
-            return { key: params.key, value };
+            const result = { key: params.key, value };
+            await api.runHooks('after:operation', context);
+            return result;
           },
           
-          list: async ({ context, api }) => {
+          list: async ({ params, api }) => {
+            // Create context from params
+            const context = { tenantId: params.tenantId };
             await api.runHooks('before:operation', context);
             
             const tenantStorage = tenantData.get(context.tenantId);
+            if (!tenantStorage) throw new Error(`Tenant storage not found for ${context.tenantId}`);
             const entries = Array.from(tenantStorage.entries());
             
-            return entries.map(([key, value]) => ({ key, value }));
+            const result = entries.map(([key, value]) => ({ key, value }));
+            await api.runHooks('after:operation', context);
+            return result;
           },
           
-          delete: async ({ params, context, api }) => {
+          delete: async ({ params, api }) => {
+            // Create context from params
+            const context = { tenantId: params.tenantId };
             await api.runHooks('before:operation', context);
             
             const tenantStorage = tenantData.get(context.tenantId);
+            if (!tenantStorage) throw new Error(`Tenant storage not found for ${context.tenantId}`);
             const existed = tenantStorage.delete(params.key);
             
-            return { deleted: existed };
+            const result = { deleted: existed };
+            await api.runHooks('after:operation', context);
+            return result;
           }
         }
       });
@@ -793,12 +824,14 @@ describe('Comprehensive Integration Tests - Real World Scenarios', () => {
       
       saas.addResource('webhooks', { perTenant: true }, {
         implementers: {
-          register: async ({ params, context, api }) => {
+          register: async ({ params, api }) => {
+            // Create context from params
+            const context = { tenantId: params.tenantId };
             await api.runHooks('before:operation', context);
             
             const tenantWebhooks = webhooks.get(context.tenantId) || [];
             const webhook = {
-              id: Date.now(),
+              id: Date.now() + Math.random(),
               url: params.url,
               events: params.events,
               secret: `secret-${Math.random()}`,
@@ -808,10 +841,13 @@ describe('Comprehensive Integration Tests - Real World Scenarios', () => {
             tenantWebhooks.push(webhook);
             webhooks.set(context.tenantId, tenantWebhooks);
             
+            await api.runHooks('after:operation', context);
             return webhook;
           },
           
-          trigger: async ({ params, context, api }) => {
+          trigger: async ({ params, api }) => {
+            // Create context from params
+            const context = { tenantId: params.tenantId };
             await api.runHooks('before:operation', context);
             
             const tenantWebhooks = webhooks.get(context.tenantId) || [];
@@ -828,7 +864,9 @@ describe('Comprehensive Integration Tests - Real World Scenarios', () => {
               }
             }
             
-            return { triggered: triggered.length, webhooks: triggered };
+            const result = { triggered: triggered.length, webhooks: triggered };
+            await api.runHooks('after:operation', context);
+            return result;
           }
         }
       });
@@ -849,22 +887,27 @@ describe('Comprehensive Integration Tests - Real World Scenarios', () => {
       });
       
       // 2. Store tenant-specific data
-      const ctx1 = { tenantId: tenant1.id };
-      const ctx2 = { tenantId: tenant2.id };
+      await saas.resources.data.set({
+        key: 'config',
+        value: { apiKey: 'acme-key-123' },
+        tenantId: tenant1.id
+      });
       
       await saas.resources.data.set({
         key: 'config',
-        value: { apiKey: 'acme-key-123' }
-      }, ctx1);
-      
-      await saas.resources.data.set({
-        key: 'config',
-        value: { apiKey: 'beta-key-456' }
-      }, ctx2);
+        value: { apiKey: 'beta-key-456' },
+        tenantId: tenant2.id
+      });
       
       // 3. Verify data isolation
-      const acmeConfig = await saas.resources.data.get({ key: 'config' }, ctx1);
-      const betaConfig = await saas.resources.data.get({ key: 'config' }, ctx2);
+      const acmeConfig = await saas.resources.data.get({ 
+        key: 'config',
+        tenantId: tenant1.id
+      });
+      const betaConfig = await saas.resources.data.get({ 
+        key: 'config',
+        tenantId: tenant2.id
+      });
       
       assert.equal(acmeConfig.value.apiKey, 'acme-key-123');
       assert.equal(betaConfig.value.apiKey, 'beta-key-456');
@@ -872,14 +915,16 @@ describe('Comprehensive Integration Tests - Real World Scenarios', () => {
       // 4. Register webhooks
       await saas.resources.webhooks.register({
         url: 'https://acme.com/webhook',
-        events: ['data.created', 'data.updated']
-      }, ctx1);
+        events: ['data.created', 'data.updated'],
+        tenantId: tenant1.id
+      });
       
       // 5. Trigger webhook
       const triggered = await saas.resources.webhooks.trigger({
         event: 'data.created',
-        payload: { key: 'newData', value: 'test' }
-      }, ctx1);
+        payload: { key: 'newData', value: 'test' },
+        tenantId: tenant1.id
+      });
       
       assert.equal(triggered.triggered, 1);
       
@@ -889,13 +934,16 @@ describe('Comprehensive Integration Tests - Real World Scenarios', () => {
       
       // 7. Test tenant validation
       await assert.rejects(
-        saas.resources.data.get({ key: 'config' }, { tenantId: 'invalid' }),
+        saas.resources.data.get({ 
+          key: 'config',
+          tenantId: 'invalid'
+        }),
         /Invalid tenant/
       );
       
       // 8. Test missing tenant context
       await assert.rejects(
-        saas.resources.data.get({ key: 'config' }, {}),
+        saas.resources.data.get({ key: 'config' }),
         /Tenant context required/
       );
     });

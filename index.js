@@ -4,14 +4,6 @@ let globalRegistry = new Map()
 
 export class Api {
   constructor(options = {}) {
-    // Validate that hooks, implementers, and constants are not in constructor
-    if (options.hooks || options.implementers || options.constants) {
-      throw new Error(
-        'Cannot add hooks, implementers, or constants in constructor. ' +
-        'Use .customize() after adding plugins.'
-      );
-    }
-    
     this.options = {
       name: null,
       version: '1.0.0',
@@ -277,7 +269,7 @@ export class Api {
 
 
   implement(method, handler) {
-    if (method === null || method === undefined || method === '') {
+    if (method === null || method === undefined) {
       throw new Error('Method name is required');
     }
     if (typeof handler !== 'function') {

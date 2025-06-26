@@ -18,11 +18,19 @@ export class Api {
     }
 
     this.hooks = new Map()
-    this._constantsMap = new Map()
-    this.constants = new Proxy({}, {
-      get: (target, prop) => this._constantsMap.get(prop),
+    this._varsMap = new Map()
+    this.vars = new Proxy({}, {
+      get: (target, prop) => this._varsMap.get(prop),
       set: (target, prop, value) => {
-        this._constantsMap.set(prop, value);
+        this._varsMap.set(prop, value);
+        return true;
+      }
+    })
+    this._helpersMap = new Map()
+    this.helpers = new Proxy({}, {
+      get: (target, prop) => this._helpersMap.get(prop),
+      set: (target, prop, value) => {
+        this._helpersMap.set(prop, value);
         return true;
       }
     })
@@ -236,18 +244,31 @@ export class Api {
       return { api: this, options: this._options };
     }
     
-    // Create api object with overridden constants and implementers
+    // Create api object with overridden vars and implementers
     const api = Object.create(this);
     
-    // Override constants: resource constants take precedence
-    const mergedConstants = new Map([
-      ...this._constantsMap,
-      ...resourceConfig.constants
+    // Override vars: resource vars take precedence
+    const mergedVars = new Map([
+      ...this._varsMap,
+      ...resourceConfig.vars
     ]);
-    api.constants = new Proxy({}, {
-      get: (target, prop) => mergedConstants.get(prop),
+    api.vars = new Proxy({}, {
+      get: (target, prop) => mergedVars.get(prop),
       set: (target, prop, value) => {
-        mergedConstants.set(prop, value);
+        mergedVars.set(prop, value);
+        return true;
+      }
+    });
+    
+    // Override helpers: resource helpers take precedence
+    const mergedHelpers = new Map([
+      ...this._helpersMap,
+      ...resourceConfig.helpers
+    ]);
+    api.helpers = new Proxy({}, {
+      get: (target, prop) => mergedHelpers.get(prop),
+      set: (target, prop, value) => {
+        mergedHelpers.set(prop, value);
         return true;
       }
     });
@@ -311,7 +332,7 @@ export class Api {
     return this
   }
 
-  customize({ hooks = {}, implementers = {}, constants = {} } = {}) {
+  customize({ hooks = {}, implementers = {}, vars = {}, helpers = {} } = {}) {
     // Process hooks
     for (const [hookName, hookDef] of Object.entries(hooks)) {
       let handler, functionName, hookAddOptions
@@ -336,9 +357,14 @@ export class Api {
       this.addHook(hookName, `api:${this.options.name}`, functionName, hookAddOptions, handler)
     }
 
-    // Process constants
-    for (const [constantName, value] of Object.entries(constants)) {
-      this.constants[constantName] = value;
+    // Process vars
+    for (const [varName, value] of Object.entries(vars)) {
+      this.vars[varName] = value;
+    }
+
+    // Process helpers
+    for (const [helperName, value] of Object.entries(helpers)) {
+      this.helpers[helperName] = value;
     }
 
     // Process implementers
@@ -354,7 +380,7 @@ export class Api {
       throw new Error(`Resource '${name}' already exists`);
     }
     
-    const { hooks = {}, implementers = {}, constants = {} } = extras;
+    const { hooks = {}, implementers = {}, vars = {}, helpers = {} } = extras;
     
     // Process resource hooks - wrap them to only run for this resource
     for (const [hookName, hookDef] of Object.entries(hooks)) {
@@ -392,7 +418,8 @@ export class Api {
     this._resources.set(name, {
       options: Object.freeze({ ...options }),
       implementers: new Map(Object.entries(implementers)),
-      constants: new Map(Object.entries(constants))
+      vars: new Map(Object.entries(vars)),
+      helpers: new Map(Object.entries(helpers))
     });
     
     return this;

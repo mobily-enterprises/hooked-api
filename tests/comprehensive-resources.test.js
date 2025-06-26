@@ -76,21 +76,21 @@ describe('Comprehensive Resource Tests', () => {
       assert.equal(resource.implementers.get('list')(), 'list result');
     });
 
-    it('should store resource constants', () => {
+    it('should store resource vars', () => {
       const api = new Api({ name: 'test', version: '1.0.0' });
       
-      const constants = {
+      const vars = {
         MAX_ITEMS: 100,
         DEFAULT_PAGE_SIZE: 20,
         ALLOWED_STATUSES: ['active', 'inactive', 'pending']
       };
       
-      api.addResource('items', {}, { constants });
+      api.addResource('items', {}, { vars });
       
       const resource = api._resources.get('items');
-      assert.equal(resource.constants.size, 3);
-      assert.equal(resource.constants.get('MAX_ITEMS'), 100);
-      assert.deepEqual(resource.constants.get('ALLOWED_STATUSES'), ['active', 'inactive', 'pending']);
+      assert.equal(resource.vars.size, 3);
+      assert.equal(resource.vars.get('MAX_ITEMS'), 100);
+      assert.deepEqual(resource.vars.get('ALLOWED_STATUSES'), ['active', 'inactive', 'pending']);
     });
 
     it('should handle resource hooks', () => {
@@ -197,7 +197,7 @@ describe('Comprehensive Resource Tests', () => {
             get: (id) => ({ id }),
             create: (data) => ({ ...data, id: 1 })
           },
-          constants: {
+          vars: {
             MAX_PRICE: 999999,
             CATEGORIES: ['electronics', 'books', 'clothing']
           },
@@ -214,7 +214,7 @@ describe('Comprehensive Resource Tests', () => {
       const resource = api._resources.get('products');
       assert.deepEqual(resource.options, resourceDef.options);
       assert.equal(resource.implementers.size, 3);
-      assert.equal(resource.constants.size, 2);
+      assert.equal(resource.vars.size, 2);
     });
   });
 
@@ -318,22 +318,22 @@ describe('Comprehensive Resource Tests', () => {
   });
 
   describe('Resource API Building', () => {
-    it('should merge constants correctly', async () => {
+    it('should merge vars correctly', async () => {
       const api = new Api({ name: 'test', version: '1.0.0' });
       
-      api.constants.GLOBAL_CONST = 'global';
-      api.constants.SHARED_CONST = 'global version';
+      api.vars.GLOBAL_CONST = 'global';
+      api.vars.SHARED_CONST = 'global version';
       
       api.addResource('items', {}, {
-        constants: {
+        vars: {
           RESOURCE_CONST: 'resource',
           SHARED_CONST: 'resource version'
         },
         implementers: {
           test: ({ api }) => ({
-            global: api.constants.GLOBAL_CONST,
-            resource: api.constants.RESOURCE_CONST,
-            shared: api.constants.SHARED_CONST
+            global: api.vars.GLOBAL_CONST,
+            resource: api.vars.RESOURCE_CONST,
+            shared: api.vars.SHARED_CONST
           })
         }
       });
@@ -522,7 +522,7 @@ describe('Comprehensive Resource Tests', () => {
       
       let hookContext;
       api.addResource('products', { table: 'products_table' }, {
-        constants: { MAX_PRICE: 1000 },
+        vars: { MAX_PRICE: 1000 },
         hooks: {
           'capture:context': (context) => {
             hookContext = context;
@@ -534,7 +534,7 @@ describe('Comprehensive Resource Tests', () => {
       
       assert.equal(hookContext.resource, 'products');
       assert.deepEqual(hookContext.context, { custom: 'data' });
-      assert.equal(hookContext.api.constants.MAX_PRICE, 1000);
+      assert.equal(hookContext.api.vars.MAX_PRICE, 1000);
       assert.deepEqual(hookContext.options.resources, { table: 'products_table' });
     });
 

@@ -226,7 +226,7 @@ describe('Comprehensive Performance and Stress Tests', () => {
             list: () => [],
             create: () => ({ id: i })
           },
-          constants: {
+          vars: {
             MAX_ITEMS: 100,
             PREFIX: `res-${i}`
           }

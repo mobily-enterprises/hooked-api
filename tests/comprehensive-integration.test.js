@@ -16,7 +16,7 @@ describe('Comprehensive Integration Tests - Real World Scenarios', () => {
       });
       
       api.customize({
-        constants: {
+        vars: {
           TAX_RATE: 0.08,
           MAX_CART_ITEMS: 100,
           CURRENCY: 'USD'
@@ -104,7 +104,7 @@ describe('Comprehensive Integration Tests - Real World Scenarios', () => {
             return product;
           }
         },
-        constants: {
+        vars: {
           MAX_PRICE: 999999,
           MIN_STOCK_WARNING: 10
         }
@@ -157,7 +157,7 @@ describe('Comprehensive Integration Tests - Real World Scenarios', () => {
               });
             }
             
-            if (cart.items.length > api.constants.MAX_CART_ITEMS) {
+            if (cart.items.length > api.vars.MAX_CART_ITEMS) {
               throw new Error('Cart limit exceeded');
             }
             
@@ -182,7 +182,7 @@ describe('Comprehensive Integration Tests - Real World Scenarios', () => {
               subtotal += item.price * item.quantity;
             }
             
-            const tax = subtotal * api.constants.TAX_RATE;
+            const tax = subtotal * api.vars.TAX_RATE;
             const total = subtotal + tax;
             
             // Create order
@@ -193,7 +193,7 @@ describe('Comprehensive Integration Tests - Real World Scenarios', () => {
               subtotal,
               tax,
               total,
-              currency: api.constants.CURRENCY,
+              currency: api.vars.CURRENCY,
               status: 'pending',
               createdAt: new Date()
             };
@@ -336,7 +336,7 @@ describe('Comprehensive Integration Tests - Real World Scenarios', () => {
       });
       
       blog.customize({
-        constants: {
+        vars: {
           MAX_POST_LENGTH: 10000,
           MAX_COMMENT_LENGTH: 1000,
           POSTS_PER_PAGE: 10
@@ -431,7 +431,7 @@ describe('Comprehensive Integration Tests - Real World Scenarios', () => {
             
             // Pagination
             const page = params.page || 1;
-            const perPage = params.perPage || api.constants.POSTS_PER_PAGE;
+            const perPage = params.perPage || api.vars.POSTS_PER_PAGE;
             const start = (page - 1) * perPage;
             const end = start + perPage;
             

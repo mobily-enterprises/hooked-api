@@ -25,14 +25,14 @@ describe('Comprehensive Security and Malformed Input Tests', () => {
       assert.equal(Object.prototype.polluted, undefined);
     });
 
-    it('should protect against prototype pollution in constants', () => {
+    it('should protect against prototype pollution in vars', () => {
       const api = new Api({
         name: 'test',
         version: '1.0.0'
       });
       
       api.customize({
-        constants: {
+        vars: {
           '__proto__': { polluted: true },
           'constructor': { polluted: true },
           'prototype': { polluted: true }
@@ -40,9 +40,9 @@ describe('Comprehensive Security and Malformed Input Tests', () => {
       });
       
       // __proto__ in object literal doesn't create a property
-      assert.equal(api.constants.__proto__, undefined);
-      assert.equal(api.constants.constructor.polluted, true);
-      assert.equal(api.constants.prototype.polluted, true);
+      assert.equal(api.vars.__proto__, undefined);
+      assert.equal(api.vars.constructor.polluted, true);
+      assert.equal(api.vars.prototype.polluted, true);
       assert.equal({}.polluted, undefined);
     });
 
@@ -643,7 +643,7 @@ describe('Comprehensive Security and Malformed Input Tests', () => {
           resourceOptions = options.resources;
           return 'done';
         }]]),
-        constants: new Map()
+        vars: new Map()
       });
       
       await api.resources.test.getOptions();

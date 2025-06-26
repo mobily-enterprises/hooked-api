@@ -30,23 +30,23 @@ describe('Resource Overrides', () => {
     assert.equal(normalMsg, 'API default message');
   });
 
-  it('should override constants at resource level', async () => {
+  it('should override vars at resource level', async () => {
     const api = new Api({
-      name: 'test-overrides-constants',
+      name: 'test-overrides-vars',
       version: '1.0.0'
     });
     
     api.customize({
-      constants: {
+      vars: {
         tableName: 'default_table'
       },
       implementers: {
-        getTable: async ({ api }) => api.constants.tableName
+        getTable: async ({ api }) => api.vars.tableName
       }
     });
     
     api.addResource('users', {}, {
-      constants: {
+      vars: {
         tableName: 'users_table'
       }
     });

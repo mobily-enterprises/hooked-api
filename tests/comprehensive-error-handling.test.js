@@ -572,28 +572,28 @@ describe('Comprehensive Error Handling and Edge Cases Tests', () => {
     });
   });
 
-  describe('Constants Error Handling', () => {
-    it('should handle constants through customize method', () => {
+  describe('Vars Error Handling', () => {
+    it('should handle vars through customize method', () => {
       const api = new Api({
         name: 'test',
         version: '1.0.0'
       });
       
       api.customize({
-        constants: { KEY: 'value' }
+        vars: { KEY: 'value' }
       });
       
-      assert.equal(api.constants.KEY, 'value');
+      assert.equal(api.vars.KEY, 'value');
     });
 
-    it('should handle prototype pollution attempts via constants', () => {
+    it('should handle prototype pollution attempts via vars', () => {
       const api = new Api({
         name: 'test',
         version: '1.0.0'
       });
       
       api.customize({
-        constants: {
+        vars: {
           '__proto__': { polluted: true },
           'constructor': { polluted: true },
           'prototype': { polluted: true }
@@ -602,9 +602,9 @@ describe('Comprehensive Error Handling and Edge Cases Tests', () => {
       
       // Note: '__proto__' in object literal sets the prototype, not a property
       // Only constructor and prototype are stored as regular keys
-      assert.equal(api.constants.__proto__, undefined);
-      assert.equal(api.constants.constructor.polluted, true);
-      assert.equal(api.constants.prototype.polluted, true);
+      assert.equal(api.vars.__proto__, undefined);
+      assert.equal(api.vars.constructor.polluted, true);
+      assert.equal(api.vars.prototype.polluted, true);
       
       // Should not pollute
       assert.equal({}.polluted, undefined);

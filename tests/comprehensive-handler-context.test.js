@@ -223,14 +223,14 @@ describe('Comprehensive Handler Execution and Context Tests', () => {
   });
 
   describe('Handler Access to API Features', () => {
-    it('should access constants from handler', async () => {
+    it('should access vars from handler', async () => {
       const api = new Api({ 
         name: 'test', 
         version: '1.0.0'
       });
       
       api.customize({
-        constants: {
+        vars: {
           MAX_RETRIES: 3,
           TIMEOUT: 5000
         }
@@ -238,9 +238,9 @@ describe('Comprehensive Handler Execution and Context Tests', () => {
       
       api.implement('useConstants', ({ api }) => {
         return {
-          retries: api.constants.MAX_RETRIES,
-          timeout: api.constants.TIMEOUT,
-          missing: api.constants.NONEXISTENT
+          retries: api.vars.MAX_RETRIES,
+          timeout: api.vars.TIMEOUT,
+          missing: api.vars.NONEXISTENT
         };
       });
       
@@ -343,26 +343,26 @@ describe('Comprehensive Handler Execution and Context Tests', () => {
       assert.deepEqual(captured.context, {});
     });
 
-    it('should provide merged constants in resource context', async () => {
+    it('should provide merged vars in resource context', async () => {
       const api = new Api({ 
         name: 'test', 
         version: '1.0.0'
       });
       
       api.customize({
-        constants: { GLOBAL: 'global', SHARED: 'from global' }
+        vars: { GLOBAL: 'global', SHARED: 'from global' }
       });
       
       api.addResource('items', {}, {
-        constants: { 
+        vars: { 
           RESOURCE: 'resource', 
           SHARED: 'from resource' 
         },
         implementers: {
           getConstants: ({ api }) => ({
-            global: api.constants.GLOBAL,
-            resource: api.constants.RESOURCE,
-            shared: api.constants.SHARED
+            global: api.vars.GLOBAL,
+            resource: api.vars.RESOURCE,
+            shared: api.vars.SHARED
           })
         }
       });
@@ -712,7 +712,7 @@ describe('Comprehensive Handler Execution and Context Tests', () => {
       api.implement('undefinedAccess', ({ options, api, context }) => {
         return {
           undefinedOption: options.nonExistent,
-          undefinedConstant: api.constants.nonExistent,
+          undefinedConstant: api.vars.nonExistent,
           undefinedContext: context.nonExistent
         };
       });

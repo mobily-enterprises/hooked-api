@@ -385,9 +385,9 @@ describe('Comprehensive Hook System Tests', () => {
     it('should provide resource-specific api and options', async () => {
       const api = new Api({ name: 'test', version: '1.0.0' });
       
-      api.constants.GLOBAL = 'global';
+      api.vars.GLOBAL = 'global';
       api.addResource('items', { resourceProp: 'value' }, {
-        constants: { RESOURCE: 'resource' }
+        vars: { RESOURCE: 'resource' }
       });
       
       let captured;
@@ -398,8 +398,8 @@ describe('Comprehensive Hook System Tests', () => {
       await api.runHooks('test', {}, 'items');
       
       assert.equal(captured.resource, 'items');
-      assert.equal(captured.api.constants.GLOBAL, 'global');
-      assert.equal(captured.api.constants.RESOURCE, 'resource');
+      assert.equal(captured.api.vars.GLOBAL, 'global');
+      assert.equal(captured.api.vars.RESOURCE, 'resource');
       assert.deepEqual(captured.options.resources, { resourceProp: 'value' });
     });
 

@@ -29,6 +29,7 @@ export class Api {
     this._apiOptions = { ...this.options }
     this._pluginOptions = {} // Mutable object for plugin options
     this._isRunningHooks = false
+    this._scopeAlias = null // Track the scope alias if set
     
     // Create proxy objects for vars and helpers (only for internal use)
     this._varsProxy = new Proxy({}, {
@@ -46,8 +47,8 @@ export class Api {
       }
     })
     
-    // Create proxy for api.scope.scopeName.methodName() syntax
-    this.scope = new Proxy({}, {
+    // Create proxy for api.scopes.scopeName.methodName() syntax
+    this.scopes = new Proxy({}, {
       get: (target, scopeName) => {
         // Prevent prototype pollution and symbol-based bypasses
         if (typeof scopeName === 'symbol' || scopeName === 'constructor' || scopeName === '__proto__') {
@@ -58,7 +59,7 @@ export class Api {
         
         // Return another proxy for the methods
         return new Proxy((...args) => {
-          throw new Error(`Direct scope call not supported. Use api.scope.${scopeName}.methodName() instead`);
+          throw new Error(`Direct scope call not supported. Use api.scopes.${scopeName}.methodName() instead`);
         }, {
           get: (target, prop) => {
             // Only non-numeric string props, so that scope.users[123] returns undefined
@@ -81,7 +82,7 @@ export class Api {
                 // Get the scope-aware context
                 const scopeContext = this._buildScopeContext(scopeName);
                 
-                return await handler({ 
+                const handlerParams = { 
                   // User data
                   params,
                   context,
@@ -89,7 +90,8 @@ export class Api {
                   // Data access (scope-aware)
                   vars: scopeContext.vars,
                   helpers: scopeContext.helpers,
-                  scope: scopeContext.scope,
+                  scope: scopeContext.scopes[scopeName],  // The current scope object
+                  scopes: scopeContext.scopes,            // All scopes proxy
                   
                   // Capabilities
                   runHooks: scopeContext.runHooks,
@@ -99,8 +101,15 @@ export class Api {
                   apiOptions: scopeContext.apiOptions,
                   pluginOptions: scopeContext.pluginOptions,
                   scopeOptions: scopeContext.scopeOptions,
-                  scope: scopeName
-                });
+                  scopeName: scopeName
+                };
+                
+                // Add alias if one is set (alias is for the collection)
+                if (this._scopeAlias) {
+                  handlerParams[this._scopeAlias] = scopeContext.scopes;
+                }
+                
+                return await handler(handlerParams);
               };
             }
             return target[prop];
@@ -133,7 +142,7 @@ export class Api {
             const context = {};
             
             // Create flattened handler context
-            return await handler({ 
+            const handlerParams = { 
               // User data
               params,
               context,
@@ -141,7 +150,8 @@ export class Api {
               // Data access
               vars: target._varsProxy,
               helpers: target._helpersProxy,
-              scope: target.scope,
+              scope: null,           // No current scope for global methods
+              scopes: target.scopes,  // All scopes proxy
               
               // Capabilities
               runHooks: target._runHooks.bind(target),
@@ -150,8 +160,15 @@ export class Api {
               name: prop,
               apiOptions: Object.freeze({ ...target._apiOptions }),
               pluginOptions: Object.freeze({ ...target._pluginOptions })
-              // No scope parameter or scopeOptions for global methods
-            });
+              // No scopeName or scopeOptions for global methods
+            };
+            
+            // Add alias if one is set
+            if (target._scopeAlias) {
+              handlerParams[target._scopeAlias] = target.scopes;
+            }
+            
+            return await handler(handlerParams);
           };
         }
         // Fall back to actual properties
@@ -354,7 +371,7 @@ export class Api {
     return {
       vars: varsProxy,
       helpers: helpersProxy,
-      scope: this.scope,
+      scopes: this.scopes,
       runHooks: (name, context) => this._runHooks(name, context, scopeName),
       apiOptions: Object.freeze({ ...this._apiOptions }),
       pluginOptions: Object.freeze({ ...this._pluginOptions }),
@@ -367,7 +384,7 @@ export class Api {
     return {
       vars: this._varsProxy,
       helpers: this._helpersProxy,
-      scope: this.scope,
+      scopes: this.scopes,
       runHooks: this._runHooks.bind(this),
       apiOptions: Object.freeze({ ...this._apiOptions }),
       pluginOptions: Object.freeze({ ...this._pluginOptions })
@@ -382,7 +399,7 @@ export class Api {
     try {
       for (const { handler, pluginName, functionName } of handlers) {
         // Flatten the handler parameters
-        const result = await handler({ 
+        const handlerParams = { 
           // User data
           params: {},
           context,
@@ -390,7 +407,8 @@ export class Api {
           // Data access
           vars: handlerContext.vars,
           helpers: handlerContext.helpers,
-          scope: handlerContext.scope,
+          scope: scope ? handlerContext.scopes[scope] : null,  // Current scope if in scope context
+          scopes: handlerContext.scopes,                        // All scopes proxy
           
           // Capabilities
           runHooks: handlerContext.runHooks,
@@ -400,8 +418,15 @@ export class Api {
           apiOptions: handlerContext.apiOptions,
           pluginOptions: handlerContext.pluginOptions,
           scopeOptions: handlerContext.scopeOptions,
-          scope
-        });
+          scopeName: scope
+        };
+        
+        // Add alias if one is set
+        if (this._scopeAlias) {
+          handlerParams[this._scopeAlias] = handlerContext.scopes;
+        }
+        
+        const result = await handler(handlerParams);
         if (result === false) {
           console.log(`Hook '${name}' handler from plugin '${pluginName}' (function: '${functionName}') stopped the chain.`)
           break
@@ -523,7 +548,7 @@ export class Api {
       // Wrap handler to only run for this scope
       const scopeName = name; // Capture scope name in closure
       const wrappedHandler = (handlerParams) => {
-        if (handlerParams.scope === scopeName) {
+        if (handlerParams.scopeName === scopeName) {
           return handler(handlerParams);
         }
       };
@@ -550,9 +575,11 @@ export class Api {
     if (aliasName in this) {
       throw new Error(`Cannot set scope alias '${aliasName}': property already exists on API instance`);
     }
+    // Store the alias name
+    this._scopeAlias = aliasName;
     // Create alias that points to the same proxy
     Object.defineProperty(this, aliasName, {
-      get: () => this.scope,
+      get: () => this.scopes,
       enumerable: true,
       configurable: true
     });
@@ -606,7 +633,7 @@ export class Api {
         // Data access
         vars: this._varsProxy,
         helpers: this._helpersProxy,
-        scope: this.scope,
+        scopes: this.scopes,
         
         // Plugin info
         name: plugin.name,

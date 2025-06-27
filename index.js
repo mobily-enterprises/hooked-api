@@ -95,6 +95,7 @@ export class Api {
                   
                   // Capabilities
                   runHooks: scopeContext.runHooks,
+                  api: this,  // API instance reference
                   
                   // Metadata
                   name: prop,
@@ -155,6 +156,7 @@ export class Api {
               
               // Capabilities
               runHooks: target._runHooks.bind(target),
+              api: receiver,  // API instance reference (use receiver to get the proxy)
               
               // Metadata
               name: prop,
@@ -412,6 +414,7 @@ export class Api {
           
           // Capabilities
           runHooks: handlerContext.runHooks,
+          api: this,  // API instance reference
           
           // Metadata
           name,

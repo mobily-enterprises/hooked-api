@@ -22,9 +22,9 @@ export class Api {
     this._vars = new Map()
     this._helpers = new Map()
     this._apiMethods = new Map()
-    this._resourceMethods = new Map() // New: methods that can only be called on resources
+    this._scopeMethods = new Map()
     this._installedPlugins = new Set()
-    this._resources = new Map()
+    this._scopes = new Map()
     // Store API options (will be frozen when building contexts)
     this._apiOptions = { ...this.options }
     this._pluginOptions = {} // Mutable object for plugin options
@@ -46,30 +46,30 @@ export class Api {
       }
     })
     
-    // Create proxy for api.resources.resourceName.methodName() syntax
-    this.resources = new Proxy({}, {
-      get: (target, resourceName) => {
+    // Create proxy for api.scope.scopeName.methodName() syntax
+    this.scope = new Proxy({}, {
+      get: (target, scopeName) => {
         // Prevent prototype pollution and symbol-based bypasses
-        if (typeof resourceName === 'symbol' || resourceName === 'constructor' || resourceName === '__proto__') {
+        if (typeof scopeName === 'symbol' || scopeName === 'constructor' || scopeName === '__proto__') {
           return undefined;
         }
         
-        if (!this._resources.has(resourceName)) return undefined;
+        if (!this._scopes.has(scopeName)) return undefined;
         
         // Return another proxy for the methods
         return new Proxy((...args) => {
-          throw new Error(`Direct resource call not supported. Use api.resources.${resourceName}.methodName() instead`);
+          throw new Error(`Direct scope call not supported. Use api.scope.${scopeName}.methodName() instead`);
         }, {
           get: (target, prop) => {
-            // Only non-numeric string props, so that resources.users[123] returns undefined
+            // Only non-numeric string props, so that scope.users[123] returns undefined
             if (typeof prop === 'string' && !prop.match(/^\d+$/)) {
-              const resource = this._resources.get(resourceName);
-              if (!resource) {
+              const scopeConfig = this._scopes.get(scopeName);
+              if (!scopeConfig) {
                 return undefined;
               }
               
-              // Find handler - check resource-specific methods first, then global resource methods
-              const handler = resource._resourceMethods?.get(prop) || this._resourceMethods.get(prop);
+              // Find handler - check scope-specific methods first, then global scope methods
+              const handler = scopeConfig._scopeMethods?.get(prop) || this._scopeMethods.get(prop);
               if (!handler) {
                 return undefined; // No method found
               }
@@ -78,28 +78,28 @@ export class Api {
                 // Create a mutable context for this method call
                 const context = {};
                 
-                // Get the resource-aware context
-                const resourceContext = this._buildResourceContext(resourceName);
+                // Get the scope-aware context
+                const scopeContext = this._buildScopeContext(scopeName);
                 
                 return await handler({ 
                   // User data
                   params,
                   context,
                   
-                  // Data access (resource-aware)
-                  vars: resourceContext.vars,
-                  helpers: resourceContext.helpers,
-                  resources: resourceContext.resources,
+                  // Data access (scope-aware)
+                  vars: scopeContext.vars,
+                  helpers: scopeContext.helpers,
+                  scope: scopeContext.scope,
                   
                   // Capabilities
-                  runHooks: resourceContext.runHooks,
+                  runHooks: scopeContext.runHooks,
                   
                   // Metadata
                   name: prop,
-                  apiOptions: resourceContext.apiOptions,
-                  pluginOptions: resourceContext.pluginOptions,
-                  resourceOptions: resourceContext.resourceOptions,
-                  resource: resourceName
+                  apiOptions: scopeContext.apiOptions,
+                  pluginOptions: scopeContext.pluginOptions,
+                  scopeOptions: scopeContext.scopeOptions,
+                  scope: scopeName
                 });
               };
             }
@@ -115,10 +115,11 @@ export class Api {
     // Register this API instance
     this._register()
     
-    // Keep use, customize, and addResource as public methods
+    // Keep use, customize, and addScope as public methods
     this.use = this.use.bind(this);
     this.customize = this.customize.bind(this);
-    this.addResource = this._addResource.bind(this);
+    this.addScope = this._addScope.bind(this);
+    this.setScopeAlias = this._setScopeAlias.bind(this);
     
     // Create the proxy first
     const proxy = new Proxy(this, {
@@ -140,7 +141,7 @@ export class Api {
               // Data access
               vars: target._varsProxy,
               helpers: target._helpersProxy,
-              resources: target.resources,
+              scope: target.scope,
               
               // Capabilities
               runHooks: target._runHooks.bind(target),
@@ -149,7 +150,7 @@ export class Api {
               name: prop,
               apiOptions: Object.freeze({ ...target._apiOptions }),
               pluginOptions: Object.freeze({ ...target._pluginOptions })
-              // No resource parameter or resourceOptions for global methods
+              // No scope parameter or scopeOptions for global methods
             });
           };
         }
@@ -159,8 +160,8 @@ export class Api {
     });
     
     // Apply customize options if provided
-    const { hooks, apiMethods, resourceMethods, vars, helpers } = customizeOptions;
-    if (hooks || apiMethods || resourceMethods || vars || helpers) {
+    const { hooks, apiMethods, scopeMethods, vars, helpers } = customizeOptions;
+    if (hooks || apiMethods || scopeMethods || vars || helpers) {
       proxy.customize(customizeOptions);
     }
     
@@ -315,16 +316,16 @@ export class Api {
     return this
   }
 
-  _buildResourceContext(resourceName) {
-    const resourceConfig = this._resources.get(resourceName);
-    if (!resourceConfig) {
-      throw new Error(`Resource '${resourceName}' not found`);
+  _buildScopeContext(scopeName) {
+    const scopeConfig = this._scopes.get(scopeName);
+    if (!scopeConfig) {
+      throw new Error(`Scope '${scopeName}' not found`);
     }
     
-    // Merge vars: resource vars take precedence
+    // Merge vars: scope vars take precedence
     const mergedVars = new Map([
       ...this._vars,
-      ...resourceConfig._vars
+      ...scopeConfig._vars
     ]);
     const varsProxy = new Proxy({}, {
       get: (target, prop) => mergedVars.get(prop),
@@ -334,10 +335,10 @@ export class Api {
       }
     });
     
-    // Merge helpers: resource helpers take precedence
+    // Merge helpers: scope helpers take precedence
     const mergedHelpers = new Map([
       ...this._helpers,
-      ...resourceConfig._helpers
+      ...scopeConfig._helpers
     ]);
     const helpersProxy = new Proxy({}, {
       get: (target, prop) => mergedHelpers.get(prop),
@@ -349,15 +350,15 @@ export class Api {
     
     // Keep options separate and frozen
     
-    // Return flattened context for resource handlers
+    // Return flattened context for scope handlers
     return {
       vars: varsProxy,
       helpers: helpersProxy,
-      resources: this.resources,
-      runHooks: (name, context) => this._runHooks(name, context, resourceName),
+      scope: this.scope,
+      runHooks: (name, context) => this._runHooks(name, context, scopeName),
       apiOptions: Object.freeze({ ...this._apiOptions }),
       pluginOptions: Object.freeze({ ...this._pluginOptions }),
-      resourceOptions: resourceConfig.options
+      scopeOptions: scopeConfig.options
     };
   }
   
@@ -366,16 +367,16 @@ export class Api {
     return {
       vars: this._varsProxy,
       helpers: this._helpersProxy,
-      resources: this.resources,
+      scope: this.scope,
       runHooks: this._runHooks.bind(this),
       apiOptions: Object.freeze({ ...this._apiOptions }),
       pluginOptions: Object.freeze({ ...this._pluginOptions })
     };
   }
 
-  async _runHooks(name, context, resource = null) {
+  async _runHooks(name, context, scope = null) {
     const handlers = this._hooks.get(name) || []
-    const handlerContext = resource ? this._buildResourceContext(resource) : this._buildGlobalContext();
+    const handlerContext = scope ? this._buildScopeContext(scope) : this._buildGlobalContext();
     
     this._isRunningHooks = true;
     try {
@@ -389,7 +390,7 @@ export class Api {
           // Data access
           vars: handlerContext.vars,
           helpers: handlerContext.helpers,
-          resources: handlerContext.resources,
+          scope: handlerContext.scope,
           
           // Capabilities
           runHooks: handlerContext.runHooks,
@@ -398,8 +399,8 @@ export class Api {
           name,
           apiOptions: handlerContext.apiOptions,
           pluginOptions: handlerContext.pluginOptions,
-          resourceOptions: handlerContext.resourceOptions,
-          resource
+          scopeOptions: handlerContext.scopeOptions,
+          scope
         });
         if (result === false) {
           console.log(`Hook '${name}' handler from plugin '${pluginName}' (function: '${functionName}') stopped the chain.`)
@@ -430,7 +431,7 @@ export class Api {
     return this
   }
 
-  _addResourceMethod(method, handler) {
+  _addScopeMethod(method, handler) {
     if (method === null || method === undefined) {
       throw new Error('Method name is required');
     }
@@ -438,12 +439,12 @@ export class Api {
       throw new Error(`Implementation for '${method}' must be a function.`)
     }
     
-    // Resource methods don't need property conflict checking since they're not on the main API
-    this._resourceMethods.set(method, handler)
+    // Scope methods don't need property conflict checking since they're not on the main API
+    this._scopeMethods.set(method, handler)
     return this
   }
 
-  customize({ hooks = {}, apiMethods = {}, resourceMethods = {}, vars = {}, helpers = {} } = {}) {
+  customize({ hooks = {}, apiMethods = {}, scopeMethods = {}, vars = {}, helpers = {} } = {}) {
     // Process hooks
     for (const [hookName, hookDef] of Object.entries(hooks)) {
       let handler, functionName, hookAddOptions
@@ -483,22 +484,22 @@ export class Api {
       this._addApiMethod(methodName, handler);
     }
 
-    // Process resourceMethods
-    for (const [methodName, handler] of Object.entries(resourceMethods)) {
-      this._addResourceMethod(methodName, handler);
+    // Process scopeMethods
+    for (const [methodName, handler] of Object.entries(scopeMethods)) {
+      this._addScopeMethod(methodName, handler);
     }
 
     return this;
   }
 
-  _addResource(name, options = {}, extras = {}) {
-    if (this._resources.has(name)) {
-      throw new Error(`Resource '${name}' already exists`);
+  _addScope(name, options = {}, extras = {}) {
+    if (this._scopes.has(name)) {
+      throw new Error(`Scope '${name}' already exists`);
     }
     
-    const { hooks = {}, apiMethods = {}, resourceMethods = {}, vars = {}, helpers = {} } = extras;
+    const { hooks = {}, apiMethods = {}, scopeMethods = {}, vars = {}, helpers = {} } = extras;
     
-    // Process resource hooks - wrap them to only run for this resource
+    // Process scope hooks - wrap them to only run for this scope
     for (const [hookName, hookDef] of Object.entries(hooks)) {
       let handler, functionName, hookAddOptions
       
@@ -519,26 +520,42 @@ export class Api {
         throw new Error(`Hook '${hookName}' must have a function handler`)
       }
       
-      // Wrap handler to only run for this resource
-      const resourceName = name; // Capture resource name in closure
+      // Wrap handler to only run for this scope
+      const scopeName = name; // Capture scope name in closure
       const wrappedHandler = (handlerParams) => {
-        if (handlerParams.resource === resourceName) {
+        if (handlerParams.scope === scopeName) {
           return handler(handlerParams);
         }
       };
       
-      this._addHook(hookName, `resource:${name}`, functionName, hookAddOptions, wrappedHandler)
+      this._addHook(hookName, `scope:${name}`, functionName, hookAddOptions, wrappedHandler)
     }
     
-    // Store resource configuration with underscore prefix for internal properties
-    this._resources.set(name, {
+    // Store scope configuration with underscore prefix for internal properties
+    this._scopes.set(name, {
       options: Object.freeze({ ...options }),
       _apiMethods: new Map(Object.entries(apiMethods)), // Deprecated - for backward compatibility
-      _resourceMethods: new Map(Object.entries(resourceMethods)),
+      _scopeMethods: new Map(Object.entries(scopeMethods)),
       _vars: new Map(Object.entries(vars)),
       _helpers: new Map(Object.entries(helpers))
     });
     
+    return this;
+  }
+
+  _setScopeAlias(aliasName) {
+    if (typeof aliasName !== 'string' || !aliasName.trim()) {
+      throw new Error('Alias name must be a non-empty string');
+    }
+    if (aliasName in this) {
+      throw new Error(`Cannot set scope alias '${aliasName}': property already exists on API instance`);
+    }
+    // Create alias that points to the same proxy
+    Object.defineProperty(this, aliasName, {
+      get: () => this.scope,
+      enumerable: true,
+      configurable: true
+    });
     return this;
   }
 
@@ -549,7 +566,7 @@ export class Api {
     if (typeof plugin.name !== 'string' || plugin.name.trim() === '') throw new Error('Plugin must have a non-empty "name" property.')
     if (typeof plugin.install !== 'function') throw new Error(`Plugin '${plugin.name}' must have an 'install' function.`)
 
-    if (plugin.name === 'api' || plugin.name === 'resources') {
+    if (plugin.name === 'api' || plugin.name === 'scopes') {
       throw new Error(`Plugin name '${plugin.name}' is reserved.`)
     }
 
@@ -572,8 +589,9 @@ export class Api {
       const installContext = {
         // Setup methods
         addApiMethod: this._addApiMethod.bind(this),
-        addResourceMethod: this._addResourceMethod.bind(this),
-        addResource: this._addResource.bind(this),
+        addScopeMethod: this._addScopeMethod.bind(this),
+        addScope: this._addScope.bind(this),
+        setScopeAlias: this._setScopeAlias.bind(this),
         runHooks: this._runHooks.bind(this),
         
         // Special addHook that injects plugin name
@@ -588,7 +606,7 @@ export class Api {
         // Data access
         vars: this._varsProxy,
         helpers: this._helpersProxy,
-        resources: this.resources,
+        scope: this.scope,
         
         // Plugin info
         name: plugin.name,

@@ -7,7 +7,7 @@
 
 ## Design Philosophy
 - Clean separation between user data and framework data
-- Resources should be easily accessible from implementers
+- Resources should be easily accessible from apiMethods
 - Avoid deeply nested property access (e.g., `options.apiInstance.instanceResources.users.list()` is too verbose)
 - Options should contain configuration, not operational capabilities
 

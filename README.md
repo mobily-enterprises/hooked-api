@@ -2,6 +2,17 @@
 
 A clean, extensible API framework with resources, hooks, and plugins.
 
+## Public API Surface
+
+The API instance exposes only these public properties and methods:
+
+- `api.use(plugin, options)` - Install plugins
+- `api.customize(config)` - Add hooks, methods, vars, and helpers
+- `api.resources` - Access to defined resources
+- `api.methodName()` - Direct calls to defined API methods
+
+All internal state is hidden behind underscore-prefixed properties (`_hooks`, `_vars`, etc.) to keep the API surface clean.
+
 ## Basic API Creation
 
 Example of the most basic usage:
@@ -15,18 +26,18 @@ const api = new Api({
   version: '1.0.0'
 });
 
-// Customize with hooks, implementers, and vars
+// Define global API methods (callable as api.methodName())
 api.customize({
-  implementers: {
-    fetch: async ({ params, resource, api }) => {
-      api.context.headers = {}
+  apiMethods: {
+    fetch: async ({ params, context, vars, helpers, resources, runHooks, options }) => {
+      // Note: global methods do NOT receive 'resource' parameter
+      context.headers = {}
       
       const response = await fetch('https://example.com', {
-        timeout: api.vars.TIMEOUT,
-        headers: api.context.headers
+        timeout: vars.TIMEOUT,
+        headers: context.headers
       });
       
-      // Your custom implementation logic here
       return { 
         status: response.status,
         data: await response.json()
@@ -37,11 +48,21 @@ api.customize({
     TIMEOUT: 5000
   }
 });
+
+// Define resource methods (only callable on resources)
+api.customize({
+  resourceMethods: {
+    list: async ({ params, context, vars, helpers, resources, runHooks, options, resource }) => {
+      // Resource methods always receive the 'resource' parameter
+      return `Listing items from resource: ${resource}`;
+    }
+  }
+});
 ```
 
 ## Adding hooks
 
-Hooks allow you to intercept and modify behavior at specific points in the request lifecycle. Here's an example showing how to add hooks and use them in implementers:
+Hooks allow you to intercept and modify behavior at specific points in the request lifecycle. Here's an example showing how to add hooks and use them in apiMethods:
 
 ```javascript
 import { Api } from 'hooked-api';
@@ -52,9 +73,9 @@ const api = new Api({
   version: '1.0.0'
 });
 
-// Customize with hooks, implementers, and vars
+// Customize with hooks, apiMethods, and vars
 api.customize({
-  implementers: {
+  apiMethods: {
     fetch: async ({ params, resource, api, context }) => {
       api.context.headers = {}
       
@@ -97,23 +118,23 @@ Plugins allow you to package and reuse functionality across different APIs. Here
 // Define the plugin
 const exampleFetchPlugin = {
   name: 'exampleFetch',
-  install: ({ api }) => {
+  install: ({ addApiMethod, addResourceMethod, addHook, vars, helpers }) => {
     // Add vars
-    api.vars.TIMEOUT = 5000;
+    vars.TIMEOUT = 5000;
     
-    // Add implementers
-    api.implement('fetch', async ({ params, resource, api, context }) => {
-      api.context.headers = {}
+    // Add global API method
+    addApiMethod('fetch', async ({ params, context, vars, runHooks }) => {
+      context.headers = {}
       
-      await api.runHooks('beforeFetching', context)
+      await runHooks('beforeFetching', context)
       
       const response = await fetch('https://example.com', {
-        timeout: api.vars.TIMEOUT,
-        headers: api.context.headers
+        timeout: vars.TIMEOUT,
+        headers: context.headers
       });
       
       context.response = response;
-      await api.runHooks('afterFetching', context)
+      await runHooks('afterFetching', context)
       
       return { 
         status: response.status,
@@ -121,12 +142,19 @@ const exampleFetchPlugin = {
       };
     });
     
+    // Add resource method
+    addResourceMethod('fetchFromResource', async ({ params, resource, options }) => {
+      // This method includes resource context
+      const url = options.resources?.url || 'https://example.com';
+      return `Fetching from ${resource} at ${url}`;
+    });
+    
     // Add hooks
-    api.addHook('beforeFetching', 'logStart', {}, ({ context }) => {
+    addHook('beforeFetching', 'logStart', {}, ({ context }) => {
       console.log('Starting fetch operation...');
     });
     
-    api.addHook('afterFetching', 'logComplete', {}, ({ context }) => {
+    addHook('afterFetching', 'logComplete', {}, ({ context }) => {
       console.log(`Fetch completed with status: ${context.response?.status}`);
     });
   }
@@ -141,10 +169,10 @@ const api = new Api({
 api.use(exampleFetchPlugin);
 
 // Now you can use the fetch method
-const result = await api.run.fetch();
+const result = await api.fetch();
 ```
 
-This plugin encapsulates all the functionality (vars, hooks, and implementers) but still only queries example.com.
+This plugin encapsulates all the functionality (vars, hooks, and apiMethods) but still only queries example.com.
 
 ## Adding another plugin
 
@@ -154,15 +182,15 @@ Plugins can work together to add functionality. Here's a plugin that adds authen
 // Define a plugin that adds auth headers
 const authPlugin = {
   name: 'auth',
-  install: ({ api }) => {
+  install: ({ vars, addHook }) => {
     // Add auth token var
-    api.vars.AUTH_TOKEN = 'Bearer your-api-token';
+    vars.AUTH_TOKEN = 'Bearer your-api-token';
     
     // Add hook to inject auth header before fetching
-    api.addHook('beforeFetching', 'addAuthHeader', ({ context, api }) => {
+    addHook('beforeFetching', 'addAuthHeader', ({ context, vars }) => {
       // Add authorization header
-      api.context.headers['Authorization'] = api.vars.AUTH_TOKEN;
-      api.context.headers['Content-Type'] = 'application/json';
+      context.headers['Authorization'] = vars.AUTH_TOKEN;
+      context.headers['Content-Type'] = 'application/json';
       
       console.log('Auth header added');
     });
@@ -179,16 +207,61 @@ api.use(exampleFetchPlugin);  // First plugin handles fetching
 api.use(authPlugin);          // Second plugin adds headers
 
 // Now fetch will include auth headers automatically
-const result = await api.run.fetch();
+const result = await api.fetch();
 // The request will have Authorization and Content-Type headers
 ```
 
 
 
 
+## API Methods vs Resource Methods
+
+Hooked API distinguishes between two types of methods:
+
+1. **API Methods** - Global methods callable directly on the API instance
+2. **Resource Methods** - Methods that can only be called on resources
+
+### API Methods
+```javascript
+// Define a global API method (only available through customize())
+api.customize({
+  apiMethods: {
+    globalFetch: async ({ params, context, vars, helpers }) => {
+      // No 'resource' parameter in global methods
+      return `Fetching ${params.url}`;
+    }
+  }
+});
+
+// Call it directly on the API
+const result = await api.globalFetch({ url: 'https://example.com' });
+```
+
+### Resource Methods
+```javascript
+// Define a resource method
+api.addResourceMethod('list', async ({ params, resource, vars }) => {
+  // Resource methods always receive 'resource' parameter
+  return `Listing ${resource} with limit: ${params.limit || 10}`;
+});
+
+// Add a resource
+api.addResource('users');
+
+// Call the resource method
+const users = await api.resources.users.list({ limit: 5 });
+// Returns: "Listing users with limit: 5"
+
+// Resource methods are NOT available on the main API
+api.list(); // This will throw an error!
+```
+
 ## Resources
 
-Resources allow you to configure different endpoints or services with their own settings while reusing the same implementers. Here's how to use resources to query different sites:
+Resources allow you to configure different endpoints or services with their own settings. Resources can have:
+- Their own configuration options
+- Resource-specific method implementations
+- Custom vars and helpers that override the global ones
 
 ```javascript
 // Create API with the base plugin
@@ -197,48 +270,44 @@ const api = new Api({
   version: '1.0.0'
 });
 
-// First, let's modify our plugin to use resource-specific URLs
+// Plugin that adds resource-specific fetching
 const flexibleFetchPlugin = {
   name: 'flexibleFetch',
-  install: ({ api }) => {
+  install: ({ addResourceMethod, addHook, vars }) => {
     // Add base vars
-    api.vars.TIMEOUT = 5000;
+    vars.TIMEOUT = 5000;
     
-    // Add implementer that uses resource options
-    api.implement('fetch', async ({ params, resource, api, context, options }) => {
-      // Require a resource to be specified
-      if (!resource) {
-        throw new Error('flexibleFetch requires a resource. Use api.resources.resourceName.fetch()');
-      }
-      
-      api.context.headers = {}
+    // Add resource method that uses resource options
+    addResourceMethod('fetch', async ({ params, resource, context, vars, runHooks, options }) => {
+      context.headers = {}
 
-      await api.runHooks('beforeFetching', context, resource)
+      await runHooks('beforeFetching', context)
       
       // Use URL from resource options, or default to example.com
       const url = options.resources?.url || 'https://example.com';
       
       const response = await fetch(url, {
-        timeout: api.vars.TIMEOUT,
-        headers: api.context.headers
+        timeout: vars.TIMEOUT,
+        headers: context.headers
       });
       
       context.response = response;
-      await api.runHooks('afterFetching', context, resource)
+      await runHooks('afterFetching', context)
       
       return { 
         status: response.status,
         data: await response.json(),
-        source: url
+        source: url,
+        resource: resource
       };
     });
     
     // Add hooks
-    api.addHook('beforeFetching', 'logStart', ({ context, resource }) => {
+    addHook('beforeFetching', 'logStart', ({ context, resource }) => {
       console.log(`Starting fetch operation for resource: ${resource || 'default'}...`);
     });
     
-    api.addHook('afterFetching', 'logComplete', ({ context, resource }) => {
+    addHook('afterFetching', 'logComplete', ({ context, resource }) => {
       console.log(`Fetch completed for ${resource || 'default'} with status: ${context.response?.status}`);
     });
   }
@@ -280,19 +349,79 @@ console.log('Posts response:', posts.source); // https://jsonplaceholder.typicod
 const weather = await api.resources.weather.fetch();
 console.log('Weather response:', weather.source); // https://api.weatherapi.com/v1/current.json
 
-// Direct api.run.fetch() will now throw an error
-try {
-  await api.run.fetch(); // Error: flexibleFetch requires a resource
-} catch (e) {
-  console.error(e.message);
-}
+// Direct api.fetch() won't work because fetch is now a resource method
+api.fetch; // undefined - resource methods aren't available on the main API
 ```
 
 Each resource can have its own:
 - Configuration options (like URL, API keys, etc.)
 - Vars that override the base API vars
 - Hooks that run only for that specific resource
-- Implementers that override the base implementers
+- apiMethods that override the base apiMethods
+
+## Options Structure
+
+Hooked API uses three separate types of options:
+
+### 1. API Options
+These are the options passed when creating the API instance:
+```javascript
+const api = new Api({
+  name: 'myapi',
+  version: '1.0.0',
+  customField: 'value'  // Any additional fields are preserved
+});
+
+// Available in handlers as:
+api.customize({
+  apiMethods: {
+    method: ({ apiOptions }) => {
+  console.log(apiOptions.name);        // 'myapi'
+  console.log(apiOptions.version);     // '1.0.0'
+      console.log(apiOptions.customField); // 'value'
+    }
+  }
+});
+```
+
+### 2. Plugin Options
+These are options passed when installing plugins:
+```javascript
+api.use(myPlugin, { apiKey: 'secret', timeout: 3000 });
+
+// Available in the plugin install function:
+const myPlugin = {
+  name: 'myPlugin',
+  install: ({ pluginOptions }) => {
+    const options = pluginOptions.myPlugin; // { apiKey: 'secret', timeout: 3000 }
+  }
+};
+
+// And in all handlers:
+api.customize({
+  apiMethods: {
+    method: ({ pluginOptions }) => {
+  const myOptions = pluginOptions.myPlugin;     // { apiKey: 'secret', timeout: 3000 }
+      const otherOptions = pluginOptions.otherPlugin; // Options from other plugins
+    }
+  }
+});
+```
+
+### 3. Resource Options
+These are options specific to each resource:
+```javascript
+api.addResource('users', {
+  url: 'https://api.example.com/users',
+  rateLimit: 100
+});
+
+// Only available in resource methods and resource-aware hooks:
+api.addResourceMethod('fetch', ({ resourceOptions }) => {
+  console.log(resourceOptions.url);       // 'https://api.example.com/users'
+  console.log(resourceOptions.rateLimit); // 100
+});
+```
 
 ## Additional Features Not Yet Covered
 
@@ -350,18 +479,78 @@ api.addHook('beforeFetch', 'guard', 'checkAccess', ({ context }) => {
 ```
 
 ### Handler Context Full Structure
+
+#### Global API Methods
 ```javascript
-api.implement('method', ({ context, api, name, options, params, resource }) => {
-  // context - Mutable object for passing data between hooks
-  // api - The API instance (resource-aware for resource calls)
-  // name - The method name ('method' in this case)
-  // options - Frozen object with:
-  //   - options.api - Original API config
-  //   - options[pluginName] - Each plugin's options
-  //   - options.resources - Resource config (if called via resource)
-  // params - Parameters passed to the method call
-  // resource - Resource name or null for direct calls
+// Handler signature for global API methods:
+({ 
+  params,         // Parameters passed to the method call
+  context,     // Mutable object for passing data between hooks
+  vars,        // Variables proxy
+  helpers,     // Helpers proxy
+  resources,   // Access to resources
+  runHooks,    // Function to run hooks
+  name,        // The method name ('method' in this case)
+  options      // Frozen config object
+}) => {
+  // NO resource parameter in global methods
 });
+```
+
+#### Resource Methods
+```javascript
+api.addResourceMethod('method', ({ 
+  params,      // Parameters passed to the method call
+  context,     // Mutable object for passing data between hooks
+  vars,        // Variables proxy (merged with resource vars)
+  helpers,     // Helpers proxy (merged with resource helpers)
+  resources,   // Access to resources
+  runHooks,    // Function to run hooks
+  name,        // The method name ('method' in this case)
+  options,     // Frozen config (includes options.resources)
+  resource     // Resource name (always provided)
+}) => {
+  // Resource methods always receive the resource parameter
+});
+```
+
+#### Hook Handlers
+```javascript
+api.addHook('hookName', 'pluginName', 'functionName', ({ 
+  params,      // Empty object for hooks
+  context,     // The context object passed to runHooks
+  vars,        // Variables (resource-aware if hook run with resource)
+  helpers,     // Helpers (resource-aware if hook run with resource)
+  resources,   // Access to resources
+  runHooks,    // Function to run hooks (careful of recursion!)
+  name,        // Hook name
+  options,     // Frozen config
+  resource     // Resource name or null
+}) => {
+  // Hook handler implementation
+});
+```
+
+### Plugin Install Context
+```javascript
+const myPlugin = {
+  name: 'myPlugin',
+  install: ({
+    addApiMethod,       // Add global API methods
+    addResourceMethod,  // Define resource methods
+    addResource,        // Add resources
+    addHook,           // Add hooks (with plugin name auto-injected)
+    runHooks,          // Run hooks
+    vars,              // Variables proxy
+    helpers,           // Helpers proxy
+    resources,         // Access to resources
+    name,              // Plugin name
+    options,           // All options (frozen)
+    context            // Empty context object
+  }) => {
+    // Plugin installation logic
+  }
+};
 ```
 
 ### Plugin Options Storage
@@ -372,24 +561,38 @@ api.use(myPlugin, { apiKey: 'secret', timeout: 3000 });
 const pluginOptions = options.myPlugin; // { apiKey: 'secret', timeout: 3000 }
 ```
 
-### Resource-Specific Implementers
+### Resource-Specific Method Implementations
 ```javascript
 api.addResource('special', { url: 'https://special.api.com' }, {
-  implementers: {
-    fetch: async (context) => {
+  resourceMethods: {
+    fetch: async ({ params, resource, resourceOptions }) => {
       // This fetch only runs for api.resources.special.fetch()
-      // Overrides the global fetch implementer
+      // Overrides the global resource method 'fetch'
+      return `Special fetch for ${resource} at ${resourceOptions.url}`;
+    },
+    customMethod: async ({ params, resource }) => {
+      // Resource-specific method not defined globally
+      return `Custom method only for ${resource}`;
     }
   }
 });
+
+// These work:
+await api.resources.special.fetch(); // Uses special implementation
+await api.resources.special.customMethod(); // Uses resource-specific method
+
+// This won't work:
+await api.fetch(); // Error - fetch is a resource method, not an API method
 ```
 
 ### Direct Method Calls
 ```javascript
-// Three ways to call methods:
-await api.run('fetch', { id: 123 });          // Function style
-await api.run.fetch({ id: 123 });             // Property style
-await api._run('fetch', { id: 123 });         // Internal (bypass proxy)
+// Call methods directly on the API instance:
+await api.fetch({ id: 123 });
+
+// Dynamic method names using bracket notation:
+const methodName = 'fetch';
+await api[methodName]({ id: 123 });
 ```
 
 ### Testing Utility

@@ -17,48 +17,34 @@ export class Api {
       throw new Error(`Invalid version format '${this.options.version}' for API '${this.options.name}'.`);
     }
 
-    this.hooks = new Map()
-    this._varsMap = new Map()
-    this.vars = new Proxy({}, {
-      get: (target, prop) => this._varsMap.get(prop),
-      set: (target, prop, value) => {
-        this._varsMap.set(prop, value);
-        return true;
-      }
-    })
-    this._helpersMap = new Map()
-    this.helpers = new Proxy({}, {
-      get: (target, prop) => this._helpersMap.get(prop),
-      set: (target, prop, value) => {
-        this._helpersMap.set(prop, value);
-        return true;
-      }
-    })
-    this.implementers = new Map()
+    // All internal state with underscore prefix
+    this._hooks = new Map()
+    this._vars = new Map()
+    this._helpers = new Map()
+    this._apiMethods = new Map()
+    this._resourceMethods = new Map() // New: methods that can only be called on resources
     this._installedPlugins = new Set()
     this._resources = new Map()
-    this._options = {
-      api: Object.freeze(this.options)
-    }
+    // Store API options (will be frozen when building contexts)
+    this._apiOptions = { ...this.options }
+    this._pluginOptions = {} // Mutable object for plugin options
     this._isRunningHooks = false
     
-    // Create proxy for api.run.methodName() syntax
-    this.run = new Proxy((...args) => this._run(...args), {
-      get: (target, prop) => {
-        // Prevent access to internal methods and prototype pollution
-        if (prop === '_run' || prop === 'hooks' || prop === '__proto__') {
-          return undefined;
-        }
-        // Only non-numeric string props, so that api.run[123] returns undefined
-        if (typeof prop === 'string' && !prop.match(/^\d+$/)) {
-          return (params) => this._run(prop, params);
-        }
-        return target[prop];
-      },
-      apply: (target, thisArg, args) => {
-        return target(...args);
+    // Create proxy objects for vars and helpers (only for internal use)
+    this._varsProxy = new Proxy({}, {
+      get: (target, prop) => this._vars.get(prop),
+      set: (target, prop, value) => {
+        this._vars.set(prop, value);
+        return true;
       }
-    });
+    })
+    this._helpersProxy = new Proxy({}, {
+      get: (target, prop) => this._helpers.get(prop),
+      set: (target, prop, value) => {
+        this._helpers.set(prop, value);
+        return true;
+      }
+    })
     
     // Create proxy for api.resources.resourceName.methodName() syntax
     this.resources = new Proxy({}, {
@@ -71,11 +57,51 @@ export class Api {
         if (!this._resources.has(resourceName)) return undefined;
         
         // Return another proxy for the methods
-        return new Proxy((...args) => this._runResource(resourceName, ...args), {
+        return new Proxy((...args) => {
+          throw new Error(`Direct resource call not supported. Use api.resources.${resourceName}.methodName() instead`);
+        }, {
           get: (target, prop) => {
             // Only non-numeric string props, so that resources.users[123] returns undefined
             if (typeof prop === 'string' && !prop.match(/^\d+$/)) {
-              return (params) => this._runResource(resourceName, prop, params);
+              const resource = this._resources.get(resourceName);
+              if (!resource) {
+                return undefined;
+              }
+              
+              // Find handler - check resource-specific methods first, then global resource methods
+              const handler = resource._resourceMethods?.get(prop) || this._resourceMethods.get(prop);
+              if (!handler) {
+                return undefined; // No method found
+              }
+              
+              return async (params = {}) => {
+                // Create a mutable context for this method call
+                const context = {};
+                
+                // Get the resource-aware context
+                const resourceContext = this._buildResourceContext(resourceName);
+                
+                return await handler({ 
+                  // User data
+                  params,
+                  context,
+                  
+                  // Data access (resource-aware)
+                  vars: resourceContext.vars,
+                  helpers: resourceContext.helpers,
+                  resources: resourceContext.resources,
+                  
+                  // Capabilities
+                  runHooks: resourceContext.runHooks,
+                  
+                  // Metadata
+                  name: prop,
+                  apiOptions: resourceContext.apiOptions,
+                  pluginOptions: resourceContext.pluginOptions,
+                  resourceOptions: resourceContext.resourceOptions,
+                  resource: resourceName
+                });
+              };
             }
             return target[prop];
           },
@@ -86,11 +112,53 @@ export class Api {
       }
     });
 
-
-    this.register()
+    // Register this API instance
+    this._register()
+    
+    // Keep use and customize as public methods
+    this.use = this.use.bind(this);
+    this.customize = this.customize.bind(this);
+    
+    // Return a proxy to enable api.methodName() syntax
+    return new Proxy(this, {
+      get(target, prop, receiver) {
+        // Check apiMethods first
+        if (target._apiMethods.has(prop)) {
+          return async (params = {}) => {
+            const handler = target._apiMethods.get(prop);
+            
+            // Create a mutable context for this method call
+            const context = {};
+            
+            // Create flattened handler context
+            return await handler({ 
+              // User data
+              params,
+              context,
+              
+              // Data access
+              vars: target._varsProxy,
+              helpers: target._helpersProxy,
+              resources: target.resources,
+              
+              // Capabilities
+              runHooks: target._runHooks.bind(target),
+              
+              // Metadata
+              name: prop,
+              apiOptions: Object.freeze({ ...target._apiOptions }),
+              pluginOptions: Object.freeze({ ...target._pluginOptions })
+              // No resource parameter or resourceOptions for global methods
+            });
+          };
+        }
+        // Fall back to actual properties
+        return Reflect.get(target, prop, receiver);
+      }
+    });
   }
 
-  register() {
+  _register() {
     const { name, version } = this.options
 
     if (!globalRegistry.has(name)) {
@@ -175,7 +243,7 @@ export class Api {
     }
   }
 
-  addHook(hookName, pluginName, functionName, hookAddOptions, handler) {
+  _addHook(hookName, pluginName, functionName, hookAddOptions, handler) {
     if (this._isRunningHooks) {
       throw new Error('Cannot add hooks while hooks are executing');
     }
@@ -195,11 +263,11 @@ export class Api {
       throw new Error(`Hook '${hookName}' can only specify one placement parameter`)
     }
 
-    if (!this.hooks.has(hookName)) {
-      this.hooks.set(hookName, [])
+    if (!this._hooks.has(hookName)) {
+      this._hooks.set(hookName, [])
     }
     
-    const handlers = this.hooks.get(hookName)
+    const handlers = this._hooks.get(hookName)
     const entry = { handler, pluginName, functionName }
 
     if (placements.length === 0) {
@@ -238,21 +306,18 @@ export class Api {
     return this
   }
 
-  _buildResourceApi(resourceName) {
+  _buildResourceContext(resourceName) {
     const resourceConfig = this._resources.get(resourceName);
     if (!resourceConfig) {
-      return { api: this, options: this._options };
+      throw new Error(`Resource '${resourceName}' not found`);
     }
     
-    // Create api object with overridden vars and implementers
-    const api = Object.create(this);
-    
-    // Override vars: resource vars take precedence
+    // Merge vars: resource vars take precedence
     const mergedVars = new Map([
-      ...this._varsMap,
-      ...resourceConfig.vars
+      ...this._vars,
+      ...resourceConfig._vars
     ]);
-    api.vars = new Proxy({}, {
+    const varsProxy = new Proxy({}, {
       get: (target, prop) => mergedVars.get(prop),
       set: (target, prop, value) => {
         mergedVars.set(prop, value);
@@ -260,12 +325,12 @@ export class Api {
       }
     });
     
-    // Override helpers: resource helpers take precedence
+    // Merge helpers: resource helpers take precedence
     const mergedHelpers = new Map([
-      ...this._helpersMap,
-      ...resourceConfig.helpers
+      ...this._helpers,
+      ...resourceConfig._helpers
     ]);
-    api.helpers = new Proxy({}, {
+    const helpersProxy = new Proxy({}, {
       get: (target, prop) => mergedHelpers.get(prop),
       set: (target, prop, value) => {
         mergedHelpers.set(prop, value);
@@ -273,42 +338,60 @@ export class Api {
       }
     });
     
-    // Override implementers: resource implementers take precedence
-    api.implementers = new Map([
-      ...this.implementers,
-      ...resourceConfig.implementers
-    ]);
+    // Keep options separate and frozen
     
-    // Create a new run proxy that uses the merged implementers
-    api.run = new Proxy((...args) => api._run(...args), {
-      get: (target, prop) => {
-        // Only non-numeric string props, so that api.run[123] returns undefined
-        if (typeof prop === 'string' && !prop.match(/^\d+$/)) {
-          return (params) => api._run(prop, params);
-        }
-        return target[prop];
-      },
-      apply: (target, thisArg, args) => {
-        return target(...args);
-      }
-    });
-    
-    // Build options with resource info
-    const options = Object.assign({}, this._options, {
-      resources: Object.freeze(resourceConfig.options)
-    });
-    
-    return { api, options };
+    // Return flattened context for resource handlers
+    return {
+      vars: varsProxy,
+      helpers: helpersProxy,
+      resources: this.resources,
+      runHooks: (name, context) => this._runHooks(name, context, resourceName),
+      apiOptions: Object.freeze({ ...this._apiOptions }),
+      pluginOptions: Object.freeze({ ...this._pluginOptions }),
+      resourceOptions: resourceConfig.options
+    };
+  }
+  
+  _buildGlobalContext() {
+    // Return flattened context for global handlers
+    return {
+      vars: this._varsProxy,
+      helpers: this._helpersProxy,
+      resources: this.resources,
+      runHooks: this._runHooks.bind(this),
+      apiOptions: Object.freeze({ ...this._apiOptions }),
+      pluginOptions: Object.freeze({ ...this._pluginOptions })
+    };
   }
 
-  async runHooks(name, context, resource = null) {
-    const handlers = this.hooks.get(name) || []
-    const { api, options } = resource ? this._buildResourceApi(resource) : { api: this, options: this._options };
+  async _runHooks(name, context, resource = null) {
+    const handlers = this._hooks.get(name) || []
+    const handlerContext = resource ? this._buildResourceContext(resource) : this._buildGlobalContext();
     
     this._isRunningHooks = true;
     try {
       for (const { handler, pluginName, functionName } of handlers) {
-        const result = await handler({ context, api, name, options, params: {}, resource });
+        // Flatten the handler parameters
+        const result = await handler({ 
+          // User data
+          params: {},
+          context,
+          
+          // Data access
+          vars: handlerContext.vars,
+          helpers: handlerContext.helpers,
+          resources: handlerContext.resources,
+          
+          // Capabilities
+          runHooks: handlerContext.runHooks,
+          
+          // Metadata
+          name,
+          apiOptions: handlerContext.apiOptions,
+          pluginOptions: handlerContext.pluginOptions,
+          resourceOptions: handlerContext.resourceOptions,
+          resource
+        });
         if (result === false) {
           console.log(`Hook '${name}' handler from plugin '${pluginName}' (function: '${functionName}') stopped the chain.`)
           break
@@ -321,18 +404,37 @@ export class Api {
   }
 
 
-  implement(method, handler) {
+  _addApiMethod(method, handler) {
     if (method === null || method === undefined) {
       throw new Error('Method name is required');
     }
     if (typeof handler !== 'function') {
       throw new Error(`Implementation for '${method}' must be a function.`)
     }
-    this.implementers.set(method, handler)
+    
+    // Check if property already exists on the instance or prototype chain
+    if (method in this) {
+      throw new Error(`Cannot define API method '${method}': property already exists on API instance`);
+    }
+    
+    this._apiMethods.set(method, handler)
     return this
   }
 
-  customize({ hooks = {}, implementers = {}, vars = {}, helpers = {} } = {}) {
+  _addResourceMethod(method, handler) {
+    if (method === null || method === undefined) {
+      throw new Error('Method name is required');
+    }
+    if (typeof handler !== 'function') {
+      throw new Error(`Implementation for '${method}' must be a function.`)
+    }
+    
+    // Resource methods don't need property conflict checking since they're not on the main API
+    this._resourceMethods.set(method, handler)
+    return this
+  }
+
+  customize({ hooks = {}, apiMethods = {}, resourceMethods = {}, vars = {}, helpers = {} } = {}) {
     // Process hooks
     for (const [hookName, hookDef] of Object.entries(hooks)) {
       let handler, functionName, hookAddOptions
@@ -354,33 +456,38 @@ export class Api {
         throw new Error(`Hook '${hookName}' must have a function handler`)
       }
       
-      this.addHook(hookName, `api:${this.options.name}`, functionName, hookAddOptions, handler)
+      this._addHook(hookName, `api:${this.options.name}`, functionName, hookAddOptions, handler)
     }
 
     // Process vars
     for (const [varName, value] of Object.entries(vars)) {
-      this.vars[varName] = value;
+      this._vars.set(varName, value);
     }
 
     // Process helpers
     for (const [helperName, value] of Object.entries(helpers)) {
-      this.helpers[helperName] = value;
+      this._helpers.set(helperName, value);
     }
 
-    // Process implementers
-    for (const [methodName, handler] of Object.entries(implementers)) {
-      this.implement(methodName, handler);
+    // Process apiMethods
+    for (const [methodName, handler] of Object.entries(apiMethods)) {
+      this._addApiMethod(methodName, handler);
+    }
+
+    // Process resourceMethods
+    for (const [methodName, handler] of Object.entries(resourceMethods)) {
+      this._addResourceMethod(methodName, handler);
     }
 
     return this;
   }
 
-  addResource(name, options = {}, extras = {}) {
+  _addResource(name, options = {}, extras = {}) {
     if (this._resources.has(name)) {
       throw new Error(`Resource '${name}' already exists`);
     }
     
-    const { hooks = {}, implementers = {}, vars = {}, helpers = {} } = extras;
+    const { hooks = {}, apiMethods = {}, resourceMethods = {}, vars = {}, helpers = {} } = extras;
     
     // Process resource hooks - wrap them to only run for this resource
     for (const [hookName, hookDef] of Object.entries(hooks)) {
@@ -405,60 +512,28 @@ export class Api {
       
       // Wrap handler to only run for this resource
       const resourceName = name; // Capture resource name in closure
-      const wrappedHandler = ({ context, api, name, options, params, resource }) => {
-        if (resource === resourceName) {
-          return handler({ context, api, name, options, params, resource });
+      const wrappedHandler = (handlerParams) => {
+        if (handlerParams.resource === resourceName) {
+          return handler(handlerParams);
         }
       };
       
-      this.addHook(hookName, `resource:${name}`, functionName, hookAddOptions, wrappedHandler)
+      this._addHook(hookName, `resource:${name}`, functionName, hookAddOptions, wrappedHandler)
     }
     
-    // Store resource configuration
+    // Store resource configuration with underscore prefix for internal properties
     this._resources.set(name, {
       options: Object.freeze({ ...options }),
-      implementers: new Map(Object.entries(implementers)),
-      vars: new Map(Object.entries(vars)),
-      helpers: new Map(Object.entries(helpers))
+      _apiMethods: new Map(Object.entries(apiMethods)), // Deprecated - for backward compatibility
+      _resourceMethods: new Map(Object.entries(resourceMethods)),
+      _vars: new Map(Object.entries(vars)),
+      _helpers: new Map(Object.entries(helpers))
     });
     
     return this;
   }
 
 
-  async _run(method, params = {}) {
-    const handler = this.implementers.get(method);
-    if (!handler) {
-      throw new Error(`No implementation found for method: ${method}`);
-    }
-    
-    return await handler({ context: {}, api: this, name: method, options: this._options, params, resource: null });
-  }
-
-  async _runResource(resourceName, method, params = {}) {
-    const resource = this._resources.get(resourceName);
-    if (!resource) {
-      throw new Error(`Resource '${resourceName}' not found`);
-    }
-    
-    // Find handler (resource first, then API)
-    const handler = resource.implementers.get(method) || this.implementers.get(method);
-    if (!handler) {
-      throw new Error(`No implementation found for method: ${method} on resource: ${resourceName}`);
-    }
-    
-    // Get the resource-aware api and options
-    const { api, options } = this._buildResourceApi(resourceName);
-    
-    return await handler({ 
-      context: {}, 
-      api, 
-      name: method, 
-      options,
-      params,
-      resource: resourceName
-    });
-  }
 
   use(plugin, options = {}) {
     if (typeof plugin !== 'object' || plugin === null) throw new Error('Plugin must be an object.')
@@ -481,20 +556,39 @@ export class Api {
     }
 
     try {
-      const pluginApi = Object.create(this);
+      // Store plugin options separately
+      this._pluginOptions[plugin.name] = Object.freeze(options)
       
-      pluginApi.addHook = (hookName, functionName, hookAddOptions, handler) => {
-        if (typeof hookAddOptions === 'function' && handler === undefined) {
-          handler = hookAddOptions;
-          hookAddOptions = {};
-        }
+      // Create flattened install context
+      const installContext = {
+        // Setup methods
+        addApiMethod: this._addApiMethod.bind(this),
+        addResourceMethod: this._addResourceMethod.bind(this),
+        addResource: this._addResource.bind(this),
+        runHooks: this._runHooks.bind(this),
         
-        return this.addHook(hookName, plugin.name, functionName, hookAddOptions, handler);
+        // Special addHook that injects plugin name
+        addHook: (hookName, functionName, hookAddOptions, handler) => {
+          if (typeof hookAddOptions === 'function' && handler === undefined) {
+            handler = hookAddOptions;
+            hookAddOptions = {};
+          }
+          return this._addHook(hookName, plugin.name, functionName, hookAddOptions, handler);
+        },
+        
+        // Data access
+        vars: this._varsProxy,
+        helpers: this._helpersProxy,
+        resources: this.resources,
+        
+        // Plugin info
+        name: plugin.name,
+        apiOptions: Object.freeze({ ...this._apiOptions }),
+        pluginOptions: Object.freeze({ ...this._pluginOptions }),
+        context: {}
       };
       
-      this._options[plugin.name] = Object.freeze(options)
-      
-      plugin.install({ context: {}, api: pluginApi, name: plugin.name, options: this._options })
+      plugin.install(installContext)
       this._installedPlugins.add(plugin.name)
     } catch (error) {
       console.error(`Error installing plugin '${plugin.name}' on API '${this.options.name}':`, error)

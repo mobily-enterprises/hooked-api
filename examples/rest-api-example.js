@@ -85,7 +85,7 @@ const AuditPlugin = {
     });
     
     // Provide method to get audit log
-    api.implement('getAuditLog', () => auditLog);
+    api.defineApiMethod('getAuditLog', () => auditLog);
   }
 };
 

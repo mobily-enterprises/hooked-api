@@ -3,7 +3,7 @@ import semver from 'semver'
 let globalRegistry = new Map()
 
 export class Api {
-  constructor(options = {}) {
+  constructor(options = {}, customizeOptions = {}) {
     this.options = {
       name: null,
       version: '1.0.0',
@@ -115,12 +115,13 @@ export class Api {
     // Register this API instance
     this._register()
     
-    // Keep use and customize as public methods
+    // Keep use, customize, and addResource as public methods
     this.use = this.use.bind(this);
     this.customize = this.customize.bind(this);
+    this.addResource = this._addResource.bind(this);
     
-    // Return a proxy to enable api.methodName() syntax
-    return new Proxy(this, {
+    // Create the proxy first
+    const proxy = new Proxy(this, {
       get(target, prop, receiver) {
         // Check apiMethods first
         if (target._apiMethods.has(prop)) {
@@ -156,6 +157,14 @@ export class Api {
         return Reflect.get(target, prop, receiver);
       }
     });
+    
+    // Apply customize options if provided
+    const { hooks, apiMethods, resourceMethods, vars, helpers } = customizeOptions;
+    if (hooks || apiMethods || resourceMethods || vars || helpers) {
+      proxy.customize(customizeOptions);
+    }
+    
+    return proxy;
   }
 
   _register() {

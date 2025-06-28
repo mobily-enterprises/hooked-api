@@ -95,7 +95,7 @@ export class Api {
                   scopes: scopeContext.scopes,            // All scopes proxy
                   
                   // Capabilities
-                  runHooks: scopeContext.runHooks,
+                  runHooks: (name) => scopeContext.runHooks(name, context),
                   api: this,  // API instance reference
                   
                   // Metadata
@@ -156,7 +156,7 @@ export class Api {
               scopes: target.scopes,  // All scopes proxy
               
               // Capabilities
-              runHooks: target._runHooks.bind(target),
+              runHooks: (name) => target._runHooks(name, context),
               api: receiver,  // API instance reference (use receiver to get the proxy)
               
               // Metadata

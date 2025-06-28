@@ -1,7 +1,7 @@
 # Hooked API
 
 Hooked API allows you to create API calls that can be extended with hooks and variables.
-For example you can create a library that connects to a database, and allow users to provide hooks to maipulate the
+For example you can create a library that connects to a database, and allow users to provide hooks to manipulate the
 lifecycle of a call.
 
 Your API users will be able to define scopes and hooks to manipulate how the API calls behave.
@@ -11,8 +11,8 @@ This library allows you to create APIs that can be extended with plugins and hoo
 The end result of a database layer API could look like this:
 
 ```javascript
-import { DbApi } from 'DbApi.js'
-import { GeneratedOnPlugin } from 'GeneratedOnPlugin.js'
+import { DbApi } from './DbApi.js'
+import { GeneratedOnPlugin } from './GeneratedOnPlugin.js'
 
 const api = new DbApi()
 
@@ -34,10 +34,11 @@ api.addScope('books',
     },
   },
   {
-    hooks:
+    hooks: {
       afterFetch: ({context}) => {
         context.record.titleAndRating = context.record.title + ' ' + context.record.rating
       }
+    }
   }
 )
 
@@ -51,20 +52,20 @@ api.addScope('authors',
 )
 
 
-const author = await api.scopes.authors.get(10);
+const author = await api.scopes.authors.get({ id: 10 });
 /* Returns:
   { 
     id: 10,
-    name: "Umberto Eco",
+    fullName: "Umberto Eco",
     generatedOn: 2025-06-28T01:35:40.971Z,
   } 
 */
 
-const book = await api.scopes.books.get(20);
+const book = await api.scopes.books.get({ id: 20 });
 /* Returns: 
   { 
-    id: 1,
-    title: "The Name of the Rose",
+    id: 20,
+    title: "The Name Of the Rose",
     rating: 10,
     titleAndRating: "The Name Of The Rose 10",
     generatedOn: 2025-06-28T01:35:40.971Z,
@@ -78,11 +79,10 @@ Note: in these examples, `db` will be mocked as an object that does very little:
 
 ```javascript
 // db.js
-
 export const db = {
-  fetch: (table, id ) => {
-    if (table == 'books') return { title: "The Name of the Rose", rating: 10, id}
-    else if (table === 'authors') return { make: "Umberto Eco", id, bookId: 100}
+  fetch: (table, id, params ) => {
+    if (table === 'books') return { json: () => ({ title: "The Name Of The Rose", rating: 10, id }) }
+    else if (table === 'authors') return { json: () => ({ fullName: "Umberto Eco", id, bookId: 100 }) }
   }
 }
 ```
@@ -95,7 +95,7 @@ Here's the simplest way to create an API with a single method:
 
 ```javascript
 import { Api } from 'hooked-api';
-import { db } from 'db.js'
+import { db } from './db.js'
 
 const api = new Api({
   name: 'library-api',
@@ -103,7 +103,7 @@ const api = new Api({
 }, {
   apiMethods: {
     getAuthor: async ({ params }) => { 
-      const response = await db.fetch('authors', params.id)
+      const response = await db.fetch('authors', params.id, {})
       return response.json();
     }
   }
@@ -121,12 +121,11 @@ const user = await api.getAuthor({ id: 100 });
 Of course, you could do this by just plain Javascript:
 
 ```javascript
-import { db } from 'db.js'
-const databaseName = 'company_db'
+import { db } from './db.js'
 const api = {}
 
-api.getAuthor: async (params) => {
-  const response = await db.fetch('authors', params.id)
+api.getAuthor = async (params) => {
+  const response = await db.fetch('authors', params.id, {})
   return response.json();
 }
 ```
@@ -139,17 +138,16 @@ You can set helpers function and variables within the API:
 
 ```javascript
 import { Api } from 'hooked-api'
-import { db } from 'db.js'
+import { db } from './db.js'
 
 const api = new Api({
   name: 'library-api',
   version: '1.0.0',
-  databaseName: 'company_db'
 }, {
   apiMethods: {
-    getAuthor: async ({ params, helpers }) => { 
-      const response = await db.fetch('authors', params.id, { timeout: vars.timeout})
-      data = response.json();
+    getAuthor: async ({ params, helpers, vars }) => { 
+      const response = await db.fetch('authors', params.id, { timeout: vars.timeout })
+      const data = response.json();
       data.generatedOn = helpers.makeDate()
       return data
     }
@@ -177,24 +175,24 @@ Here is an example of how to improve this library providing hooks:
 
 ```javascript
 import { Api } from 'hooked-api';
-import { db } from 'db.js'
+import { db } from './db.js'
 
 const api = new Api({
   name: 'library-api',
   version: '1.0.0',
-  databaseName: 'company_db'
 }, {
   apiMethods: {
-    getAuthor: async ({ context, params, helpers }) => {       
+    getAuthor: async ({ context, params, helpers, vars, runHooks }) => {       
+
       // Run the before-fetch hooks
-      await runHooks('beforeFetch', context);
+      await runHooks('beforeFetch');
  
       // Fetch the data
       const response = await db.fetch('authors', params.id, { timeout: vars.timeout})
       context.record = response.json();
 
       // Run the after-fetch hooks
-      await runHooks('afterFetch', context);
+      await runHooks('afterFetch');
  
       return context.record
     }
@@ -213,7 +211,7 @@ const api = new Api({
 });
 ```
 
-Here, the data manipulation was delegated to a hook, whoch added the random field to the returned data.
+Here, the data manipulation was delegated to a hook, which added the random field to the returned data.
 
 ## Scopes: Organizing Different Types of Data
 
@@ -222,15 +220,15 @@ Note that the property `scopeMethods` is used instead of `apiMethods`:
 
 ```javascript
 import { Api } from 'hooked-api'
-import { db } from 'db.js'
+import { db } from './db.js'
 
 const api = new Api({
-  name: 'linrary-api',
+  name: 'library-api',
   version: '1.0.0',
 }, {
-  // Note that we are now definint scope methods...
+  // Note that we are now defining scope methods...
   scopeMethods: {
-    get: async ({ context, scopeOptions, params, helpers, scopeName }) => { 
+    get: async ({ context, scopeOptions, params, helpers, vars, scopeName, runHooks }) => { 
 
       // Run the before-fetch hooks
       await runHooks('beforeFetch', context);
@@ -272,10 +270,11 @@ api.addScope('books',
     },
   },
   {
-    hooks:
+    hooks: {
       afterFetch: ({context}) => {
         context.record.titleAndRating = context.record.title + ' ' + context.record.rating
       }
+    }
   }
 )
 
@@ -290,26 +289,26 @@ api.addScope('authors',
 ```
 The first parameter is the scope's name (`books` or `authors`); the second parameter is the scope's options. In
 this case, we defined `schema` (which at this point is not used in the current implementation).
-Both scopes will return records with `generatedOn` set to the current data, but only `books` will have 
+Both scopes will return records with `generatedOn` set to the current date, but only `books` will have 
 `titleAndRating` since the hook is limited to the `books` scope. 
 
 To use it:
 
 ```javascript
-const author = await api.scopes.authors.get(10);
+const author = await api.scopes.authors.get({id: 10});
 /* Returns:
   { 
     id: 10,
-    name: "Umberto Eco",
+    fullName: "Umberto Eco",
     generatedOn: 2025-06-28T01:35:40.971Z,
   } 
 */
 
-const book = await api.scopes.books.get(20);
+const book = await api.scopes.books.get({id: 20});
 /* Returns: 
   { 
-    id: 1,
-    title: "The Name of the Rose",
+    id: 20,
+    title: "The Name Of the Rose",
     rating: 10,
     titleAndRating: "The Name Of The Rose 10",
     generatedOn: 2025-06-28T01:35:40.971Z,
@@ -343,18 +342,20 @@ Plugins are what make this library actually useful and demonstrate its true exte
 
 Imagine you want to add a logging mechanism, authentication features, or a specialized data transformation pipeline that can be applied across different API instances without rewriting the code. That's where plugins shine.
 
-This is the weather code seen above, turned into a plugin.
+This is the database code seen above, turned into a plugin.
 
-```Javascript
+```javascript
 // DatabasePlugin.js
-const DatabasePlugin = {
+import { db } from './db.js'
+export const DatabasePlugin = {
   name: 'DatabasePlugin',
   
   dependencies: [], // This plugin stands alone
   
-  install: ({ setScopeAlias, addScopeMethod, addScope, vars, helpers, name: pluginName, apiOptions }) => {
+  install: ({ setScopeAlias, addScopeMethod, addScope, vars, helpers, pluginName, apiOptions }) => {
   
-    addScopeMethod('get', async ({ context, scopeOptions, params, helpers, scopeName }) => {
+    addScopeMethod('get', async ({ context, scopeOptions, params, helpers, scopeName, runHooks }) => {
+
       // Run the before-fetch hooks
       await runHooks('beforeFetch', context);
  
@@ -365,10 +366,11 @@ const DatabasePlugin = {
       // Run the after-fetch hooks
       await runHooks('afterFetch', context);
 
-      dbApi.setScopeAlias('tables', 'addTable');
 
       return context.record
     });
+
+    setScopeAlias('tables', 'addTable');
 
     // Set vars and helpers directly
     vars.timeout = 10000
@@ -382,23 +384,22 @@ We should also add a GeneratedOnPlugin, like this:
 
 ```javascript
 // GeneratedOnPlugin.js
-import { db } from 'db.js'
-const GeneratedOnPlugin = {
+export const GeneratedOnPlugin = {
   name: 'GeneratedOnPlugin',
   
-  dependencies: ['DatabasePlugin'], // This plugin stands alone
+  dependencies: ['DatabasePlugin'],
   
-  install: ({ addScopeMethod, addHook vars, helpers, name: pluginName, apiOptions }) => {
+  install: ({ addScopeMethod, addHook, vars, helpers, pluginName, apiOptions }) => {
 
     // The helper used by the hook
     helpers.makeDate = () => new Date()
 
-    // The hook that will 
-    addHook('afterFetch', 'addGenerateOn', ({context, helpers}) => {
+    // The hook that will adds the generatedOn to all records
+    addHook('afterFetch', 'addGeneratedOn', ({context, helpers}) => {
       context.record.generatedOn = helpers.makeDate()
     })
   },
-};
+}
 ```
 
 This plugin will be available to library users who want to add the `generatedOn` field to their records.
@@ -406,7 +407,7 @@ At this point, you can just make a new Api object, and add the two plugins to it
 
 ```javascript
 import { DatabasePlugin } from './DatabasePlugin.js'
-import { GeneratedOnPlugin } from './GeneratedonPlugin.js'
+import { GeneratedOnPlugin } from './GeneratedOnPlugin.js'
 
 
 const api = new Api({
@@ -423,14 +424,14 @@ api.use(GeneratedOnPlugin)
 
 ## Making a pre-hooked Api class
 
-Most of the time (in fact, probably all of the time) you will want to distibute a ready-to-go class with a
+Most of the time (in fact, probably all of the time) you will want to distribute a ready-to-go class with a
 base, initial plugin pre-used in it.
 Here is what you do:
 
-```Javascript
+```javascript
 // DbApi.js
 import { DatabasePlugin } from './DatabasePlugin.js'
-import { Api } from './Api.js'; // Adjust the path to your Api class
+import { Api } from 'hooked-api'; // Adjust the path to your Api class
 
 class DbApi extends Api {
 
@@ -453,9 +454,9 @@ export default DbApi;
 
 To use it:
 
-```Javascript
+```javascript
 import { DbApi } from './DbApi.js'
-import { GeneratedOnPlugin } from './GeneratedonPlugin.js'
+import { GeneratedOnPlugin } from './GeneratedOnPlugin.js'
 
 
 const api = new DbApi({
@@ -585,7 +586,7 @@ const myPlugin = {
     runHooks,           // Run hooks
     vars,               // Variables proxy
     helpers,            // Helpers proxy
-    scope,              // Access to scopes
+    scopes,             // Access to scopes
     name,               // Plugin name
     apiOptions,         // Frozen API configuration
     pluginOptions,      // Frozen plugin configurations

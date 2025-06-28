@@ -327,19 +327,15 @@ Notice how:
 You can create custom aliases for the `scope` property to make your API more domain-specific:
 
 ```javascript
-import { Api } from 'hooked-api';
-
-// Define scopeMethods once - they're the same for all scopes
-const weatherApi = new Api({...})
-
-// (...)
 
 // Create an alias "table" that points to "scopes"
-dbApi.setScopeAlias('tables');
+dbApi.setScopeAlias('tables', 'addTable');
 
-// You can use "info" instead of "scopes"
-const author = await api.tables.authors.get(10);
+// api.addTable('books', ...)
+// api.tables.books.get(...)
 ```
+The first parameter is the alias for `api.scopes`, the second parameter is the alias for `api.addScope`.
+These aliases make the code more expressive and easy to understand.
 
 ## Plugins
 
@@ -356,7 +352,7 @@ const DatabasePlugin = {
   
   dependencies: [], // This plugin stands alone
   
-  install: ({ addScopeMethod, addScope, vars, helpers, name: pluginName, apiOptions }) => {
+  install: ({ setScopeAlias, addScopeMethod, addScope, vars, helpers, name: pluginName, apiOptions }) => {
   
     addScopeMethod('get', async ({ context, scopeOptions, params, helpers, scopeName }) => {
       // Run the before-fetch hooks
@@ -368,7 +364,9 @@ const DatabasePlugin = {
 
       // Run the after-fetch hooks
       await runHooks('afterFetch', context);
- 
+
+      dbApi.setScopeAlias('tables', 'addTable');
+
       return context.record
     });
 

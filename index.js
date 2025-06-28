@@ -30,6 +30,7 @@ export class Api {
     this._pluginOptions = {} // Mutable object for plugin options
     this._isRunningHooks = false
     this._scopeAlias = null // Track the scope alias if set
+    this._addScopeAlias = null // Track the addScope alias if set
     
     // Create proxy objects for vars and helpers (only for internal use)
     this._varsProxy = new Proxy({}, {
@@ -571,21 +572,43 @@ export class Api {
     return this;
   }
 
-  _setScopeAlias(aliasName) {
-    if (typeof aliasName !== 'string' || !aliasName.trim()) {
-      throw new Error('Alias name must be a non-empty string');
+  _setScopeAlias(aliasName, addScopeAlias = null) {
+    // Handle scopes alias
+    if (aliasName !== null) {
+      if (typeof aliasName !== 'string' || !aliasName.trim()) {
+        throw new Error('Alias name must be a non-empty string');
+      }
+      if (aliasName in this) {
+        throw new Error(`Cannot set scope alias '${aliasName}': property already exists on API instance`);
+      }
+      // Store the alias name
+      this._scopeAlias = aliasName;
+      // Create alias that points to the same proxy
+      Object.defineProperty(this, aliasName, {
+        get: () => this.scopes,
+        enumerable: true,
+        configurable: true
+      });
     }
-    if (aliasName in this) {
-      throw new Error(`Cannot set scope alias '${aliasName}': property already exists on API instance`);
+    
+    // Handle addScope alias
+    if (addScopeAlias !== null) {
+      if (typeof addScopeAlias !== 'string' || !addScopeAlias.trim()) {
+        throw new Error('addScope alias must be a non-empty string');
+      }
+      if (addScopeAlias in this) {
+        throw new Error(`Cannot set addScope alias '${addScopeAlias}': property already exists on API instance`);
+      }
+      // Store the addScope alias name
+      this._addScopeAlias = addScopeAlias;
+      // Create alias that points to the addScope method
+      Object.defineProperty(this, addScopeAlias, {
+        get: () => this.addScope,
+        enumerable: true,
+        configurable: true
+      });
     }
-    // Store the alias name
-    this._scopeAlias = aliasName;
-    // Create alias that points to the same proxy
-    Object.defineProperty(this, aliasName, {
-      get: () => this.scopes,
-      enumerable: true,
-      configurable: true
-    });
+    
     return this;
   }
 

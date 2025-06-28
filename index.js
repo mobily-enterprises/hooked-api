@@ -5,6 +5,52 @@ const VALID_JS_IDENTIFIER = /^[a-zA-Z_$][a-zA-Z0-9_$]*$/
 const DANGEROUS_PROPS = ['__proto__', 'constructor', 'prototype']
 const isDangerousProp = (prop) => DANGEROUS_PROPS.includes(prop)
 
+// Logging levels
+export const LogLevel = {
+  ERROR: 0,
+  WARN: 1,
+  INFO: 2,
+  DEBUG: 3,
+  TRACE: 4
+}
+
+const LOG_LEVEL_NAMES = {
+  0: 'ERROR',
+  1: 'WARN',
+  2: 'INFO',
+  3: 'DEBUG',
+  4: 'TRACE'
+}
+
+const LOG_LEVEL_VALUES = {
+  'error': 0,
+  'warn': 1,
+  'info': 2,
+  'debug': 3,
+  'trace': 4
+}
+
+// ANSI color codes for pretty logging
+const COLORS = {
+  reset: '\x1b[0m',
+  bright: '\x1b[1m',
+  dim: '\x1b[2m',
+  red: '\x1b[31m',
+  yellow: '\x1b[33m',
+  blue: '\x1b[34m',
+  magenta: '\x1b[35m',
+  cyan: '\x1b[36m',
+  gray: '\x1b[90m'
+}
+
+const LOG_COLORS = {
+  ERROR: COLORS.red,
+  WARN: COLORS.yellow,
+  INFO: COLORS.blue,
+  DEBUG: COLORS.magenta,
+  TRACE: COLORS.gray
+}
+
 // Custom error classes for better error categorization
 export class HookedApiError extends Error {
   constructor(message, code = 'HOOKED_API_ERROR') {
@@ -59,11 +105,23 @@ export class MethodError extends HookedApiError {
 
 export class Api {
   constructor(options = {}, customizeOptions = {}) {
+    // Default logging configuration
+    const defaultLogging = {
+      level: 'info',
+      format: 'pretty',
+      timestamp: true,
+      colors: true,
+      logger: console
+    };
+    
     this.options = {
       name: null,
       version: '1.0.0',
       ...options
     }
+    
+    // Properly merge logging options
+    this.options.logging = { ...defaultLogging, ...(options.logging || {}) }
 
     if (typeof this.options.name !== 'string' || this.options.name.trim() === '') {
       const received = this.options.name === undefined ? 'undefined' : 
@@ -107,6 +165,12 @@ export class Api {
     this._pluginOptions = {} // Mutable object for plugin options
     this._scopeAlias = null // Track the scope alias if set
     this._addScopeAlias = null // Track the addScope alias if set
+    
+    // Initialize logger
+    this._logLevel = typeof this.options.logging.level === 'string' ? 
+      LOG_LEVEL_VALUES[this.options.logging.level.toLowerCase()] || LogLevel.INFO : 
+      this.options.logging.level
+    this._logger = this._createLogger()
     
     // Create proxy objects for vars and helpers (only for internal use)
     this._varsProxy = new Proxy({}, {
@@ -167,6 +231,11 @@ export class Api {
               }
               
               return async (params = {}) => {
+                const startTime = Date.now();
+                const methodContext = `${scopeName}.${prop}`;
+                
+                this._logger.debug(`Scope method '${prop}' called on '${scopeName}'`, { params });
+                
                 // Create a mutable context for this method call
                 const context = {};
                 
@@ -186,6 +255,7 @@ export class Api {
                   
                   // Capabilities
                   runHooks: (name) => scopeContext.runHooks(name, context, params),
+                  log: scopeContext.log,
                   
                   // Metadata
                   name: prop,
@@ -200,7 +270,16 @@ export class Api {
                   handlerParams[this._scopeAlias] = scopeContext.scopes;
                 }
                 
-                return await handler(handlerParams);
+                try {
+                  const result = await handler(handlerParams);
+                  const duration = Date.now() - startTime;
+                  this._logger.debug(`Scope method '${prop}' on '${scopeName}' completed`, { duration: `${duration}ms` });
+                  return result;
+                } catch (error) {
+                  const duration = Date.now() - startTime;
+                  this._logger.error(`Scope method '${prop}' on '${scopeName}' failed`, { error: error.message, duration: `${duration}ms` });
+                  throw error;
+                }
               };
             }
             return target[prop];
@@ -227,10 +306,16 @@ export class Api {
         // Check apiMethods first
         if (target._apiMethods.has(prop)) {
           return async (params = {}) => {
+            const startTime = Date.now();
             const handler = target._apiMethods.get(prop);
+            
+            target._logger.debug(`API method '${prop}' called`, { params });
             
             // Create a mutable context for this method call
             const context = {};
+            
+            // Create logger for this context
+            const log = target._createContextLogger(prop);
             
             // Create flattened handler context
             const handlerParams = { 
@@ -246,6 +331,7 @@ export class Api {
               
               // Capabilities
               runHooks: (name) => target._runHooks(name, context, params),
+              log,
               
               // Metadata
               name: prop,
@@ -259,7 +345,16 @@ export class Api {
               handlerParams[target._scopeAlias] = target.scopes;
             }
             
-            return await handler(handlerParams);
+            try {
+              const result = await handler(handlerParams);
+              const duration = Date.now() - startTime;
+              target._logger.debug(`API method '${prop}' completed`, { duration: `${duration}ms` });
+              return result;
+            } catch (error) {
+              const duration = Date.now() - startTime;
+              target._logger.error(`API method '${prop}' failed`, { error: error.message, duration: `${duration}ms` });
+              throw error;
+            }
           };
         }
         // Fall back to actual properties
@@ -274,6 +369,95 @@ export class Api {
     }
     
     return proxy;
+  }
+  
+  _createLogger() {
+    const apiName = this.options.name;
+    const loggingOpts = this.options.logging;
+    const customLogger = loggingOpts.logger;
+    
+    const log = (level, message, data, context) => {
+      // Check if this log level is enabled
+      if (level < this._logLevel) return;
+      
+      const levelName = LOG_LEVEL_NAMES[level];
+      const timestamp = loggingOpts.timestamp ? new Date().toISOString() : '';
+      
+      // Build the log prefix
+      let prefix = '';
+      if (loggingOpts.format === 'pretty' && loggingOpts.colors && customLogger === console) {
+        const color = LOG_COLORS[levelName];
+        prefix = `${color}[${levelName}]${COLORS.reset}`;
+        if (context) {
+          prefix += ` ${COLORS.cyan}[${apiName}${context ? ':' + context : ''}]${COLORS.reset}`;
+        } else {
+          prefix += ` ${COLORS.cyan}[${apiName}]${COLORS.reset}`;
+        }
+      } else {
+        prefix = `[${levelName}] [${apiName}${context ? ':' + context : ''}]`;
+      }
+      
+      if (timestamp) {
+        prefix = `${timestamp} ${prefix}`;
+      }
+      
+      // Format the message
+      let output = `${prefix} ${message}`;
+      
+      // Log based on level
+      if (data !== undefined) {
+        if (loggingOpts.format === 'json') {
+          customLogger.log(JSON.stringify({ level: levelName, api: apiName, context, message, data, timestamp }));
+        } else {
+          if (level === LogLevel.ERROR) {
+            customLogger.error(output, data);
+          } else if (level === LogLevel.WARN) {
+            customLogger.warn(output, data);
+          } else {
+            customLogger.log(output, data);
+          }
+        }
+      } else {
+        if (loggingOpts.format === 'json') {
+          customLogger.log(JSON.stringify({ level: levelName, api: apiName, context, message, timestamp }));
+        } else {
+          if (level === LogLevel.ERROR) {
+            customLogger.error(output);
+          } else if (level === LogLevel.WARN) {
+            customLogger.warn(output);
+          } else {
+            customLogger.log(output);
+          }
+        }
+      }
+    };
+    
+    return {
+      error: (msg, data, ctx) => log(LogLevel.ERROR, msg, data, ctx),
+      warn: (msg, data, ctx) => log(LogLevel.WARN, msg, data, ctx),
+      info: (msg, data, ctx) => log(LogLevel.INFO, msg, data, ctx),
+      debug: (msg, data, ctx) => log(LogLevel.DEBUG, msg, data, ctx),
+      trace: (msg, data, ctx) => log(LogLevel.TRACE, msg, data, ctx)
+    };
+  }
+  
+  _createContextLogger(contextName, scopeLogLevel = null) {
+    // Check if we should use scope-specific log level
+    const effectiveLogLevel = scopeLogLevel !== null ? scopeLogLevel : this._logLevel;
+    
+    const log = (level, msg, data) => {
+      if (level < effectiveLogLevel) return;
+      this._logger[LOG_LEVEL_NAMES[level].toLowerCase()](msg, data, contextName);
+    };
+    
+    const logger = (msg, data) => log(LogLevel.INFO, msg, data);
+    logger.error = (msg, data) => log(LogLevel.ERROR, msg, data);
+    logger.warn = (msg, data) => log(LogLevel.WARN, msg, data);
+    logger.info = (msg, data) => log(LogLevel.INFO, msg, data);
+    logger.debug = (msg, data) => log(LogLevel.DEBUG, msg, data);
+    logger.trace = (msg, data) => log(LogLevel.TRACE, msg, data);
+    
+    return logger;
   }
 
   _register() {
@@ -502,12 +686,22 @@ export class Api {
     
     // Keep options separate and frozen
     
+    // Check for scope-specific log level
+    const scopeLogLevel = scopeConfig.options?.logging?.level;
+    const effectiveLogLevel = scopeLogLevel !== undefined ? 
+      (typeof scopeLogLevel === 'string' ? LOG_LEVEL_VALUES[scopeLogLevel.toLowerCase()] : scopeLogLevel) :
+      null;
+    
+    // Create logger for scope context
+    const log = this._createContextLogger(scopeName, effectiveLogLevel);
+    
     // Return flattened context for scope handlers
     return {
       vars: varsProxy,
       helpers: helpersProxy,
       scopes: this.scopes,
       runHooks: (name, context, params) => this._runHooks(name, context, params, scopeName),
+      log,
       apiOptions: Object.freeze({ ...this._apiOptions }),
       pluginOptions: Object.freeze({ ...this._pluginOptions }),
       scopeOptions: scopeConfig.options
@@ -515,12 +709,16 @@ export class Api {
   }
   
   _buildGlobalContext() {
+    // Create logger for global context
+    const log = this._createContextLogger('global');
+    
     // Return flattened context for global handlers
     return {
       vars: this._varsProxy,
       helpers: this._helpersProxy,
       scopes: this.scopes,
       runHooks: this._runHooks.bind(this),
+      log,
       apiOptions: Object.freeze({ ...this._apiOptions }),
       pluginOptions: Object.freeze({ ...this._pluginOptions })
     };
@@ -528,9 +726,20 @@ export class Api {
 
   async _runHooks(name, context, params = {}, scopeName = null) {
     const handlers = this._hooks.get(name) || []
+    if (handlers.length === 0) {
+      this._logger.trace(`No handlers for hook '${name}'${scopeName ? ` in scope '${scopeName}'` : ''}`);
+      return context;
+    }
+    
+    const hookContext = scopeName ? `${scopeName}:${name}` : name;
+    this._logger.debug(`Running hook '${name}'${scopeName ? ` for scope '${scopeName}'` : ''}`, { handlerCount: handlers.length });
+    
     const handlerContext = scopeName ? this._buildScopeContext(scopeName) : this._buildGlobalContext();
     
+    let handlerIndex = 0;
     for (const { handler, pluginName, functionName } of handlers) {
+      const startTime = Date.now();
+      this._logger.trace(`Hook handler '${functionName}' starting`, { plugin: pluginName, hook: name, scope: scopeName });
         // Flatten the handler parameters
         const handlerParams = { 
           // User data
@@ -545,6 +754,7 @@ export class Api {
           
           // Capabilities
           runHooks: handlerContext.runHooks,
+          log: handlerContext.log,
           
           // Metadata
           name,
@@ -559,12 +769,31 @@ export class Api {
           handlerParams[this._scopeAlias] = handlerContext.scopes;
         }
         
-        const result = await handler(handlerParams);
-        if (result === false) {
-          // Hook returned false - stop the chain
-          break
+        try {
+          const result = await handler(handlerParams);
+          const duration = Date.now() - startTime;
+          
+          if (result === false) {
+            this._logger.debug(`Hook handler '${functionName}' stopped chain`, { plugin: pluginName, hook: name, duration: `${duration}ms` });
+            break;
+          } else {
+            this._logger.trace(`Hook handler '${functionName}' completed`, { plugin: pluginName, hook: name, duration: `${duration}ms` });
+          }
+        } catch (error) {
+          const duration = Date.now() - startTime;
+          this._logger.error(`Hook handler '${functionName}' failed`, { 
+            plugin: pluginName, 
+            hook: name, 
+            error: error.message, 
+            duration: `${duration}ms` 
+          });
+          throw error;
         }
+        
+        handlerIndex++;
     }
+    
+    this._logger.debug(`Hook '${name}' completed${scopeName ? ` for scope '${scopeName}'` : ''}`, { handlersRun: handlerIndex });
     return context;
   }
 
@@ -625,6 +854,7 @@ export class Api {
     }
     
     this._apiMethods.set(method, handler)
+    this._logger.trace(`Added API method '${method}'`);
     return this
   }
 
@@ -670,6 +900,7 @@ export class Api {
     
     // Scope methods don't need property conflict checking since they're not on the main API
     this._scopeMethods.set(method, handler)
+    this._logger.trace(`Added scope method '${method}'`);
     return this
   }
 
@@ -784,6 +1015,18 @@ export class Api {
     
     const { hooks = {}, apiMethods = {}, scopeMethods = {}, vars = {}, helpers = {} } = extras;
     
+    // Log what's being added
+    const additions = [];
+    if (Object.keys(hooks).length > 0) additions.push(`${Object.keys(hooks).length} hooks`);
+    if (Object.keys(apiMethods).length > 0) additions.push(`${Object.keys(apiMethods).length} api methods`);
+    if (Object.keys(scopeMethods).length > 0) additions.push(`${Object.keys(scopeMethods).length} scope methods`);
+    if (Object.keys(vars).length > 0) additions.push(`${Object.keys(vars).length} vars`);
+    if (Object.keys(helpers).length > 0) additions.push(`${Object.keys(helpers).length} helpers`);
+    
+    if (additions.length > 0) {
+      this._logger.trace(`Scope '${name}' includes: ${additions.join(', ')}`);
+    }
+    
     // Process scope hooks - wrap them to only run for this scope
     for (const [hookName, hookDef] of Object.entries(hooks)) {
       let handler, functionName, hookAddOptions
@@ -835,6 +1078,7 @@ export class Api {
       };
       
       this._addHook(hookName, `scope:${name}`, functionName, hookAddOptions, wrappedHandler)
+      this._logger.trace(`Added scope-specific hook '${hookName}' for scope '${name}'`);
     }
     
     // Store scope configuration with underscore prefix for internal properties
@@ -846,10 +1090,15 @@ export class Api {
       _helpers: new Map(Object.entries(helpers))
     });
     
+    this._logger.info(`Scope '${name}' added successfully`);
     return this;
   }
 
   _setScopeAlias(aliasName, addScopeAlias = null) {
+    if (aliasName !== null || addScopeAlias !== null) {
+      this._logger.debug(`Setting scope aliases`, { scopeAlias: aliasName, addScopeAlias });
+    }
+    
     // Handle scopes alias
     if (aliasName !== null) {
       if (typeof aliasName !== 'string' || !aliasName.trim()) {
@@ -986,6 +1235,10 @@ export class Api {
     }
 
     const dependencies = plugin.dependencies || []
+    if (dependencies.length > 0) {
+      this._logger.debug(`Checking dependencies for plugin '${plugin.name}'`, { dependencies });
+    }
+    
     for (const depName of dependencies) {
       if (!this._installedPlugins.has(depName)) {
         const installedPlugins = Array.from(this._installedPlugins);
@@ -1002,21 +1255,43 @@ export class Api {
       }
     }
 
+    this._logger.info(`Installing plugin '${plugin.name}'`, { options });
+    const startTime = Date.now();
+    
     try {
       // Store plugin options separately
       this._pluginOptions[plugin.name] = Object.freeze(options)
       
+      // Create logger for plugin context
+      const log = this._createContextLogger(`plugin:${plugin.name}`);
+      
       // Create flattened install context
+      const api = this; // Capture this reference
       const installContext = {
         // Setup methods
-        addApiMethod: this._addApiMethod.bind(this),
-        addScopeMethod: this._addScopeMethod.bind(this),
-        addScope: this._addScope.bind(this),
-        setScopeAlias: this._setScopeAlias.bind(this),
+        addApiMethod: (method, handler) => {
+          if (api._logger) {
+            api._logger.trace(`Plugin '${plugin.name}' adding API method '${method}'`);
+          }
+          return api._addApiMethod.call(api, method, handler);
+        },
+        addScopeMethod: (method, handler) => {
+          api._logger.trace(`Plugin '${plugin.name}' adding scope method '${method}'`);
+          return api._addScopeMethod(method, handler);
+        },
+        addScope: (name, options, extras) => {
+          api._logger.trace(`Plugin '${plugin.name}' adding scope '${name}'`);
+          return api._addScope(name, options, extras);
+        },
+        setScopeAlias: (aliasName, addScopeAlias) => {
+          api._logger.trace(`Plugin '${plugin.name}' setting scope alias '${aliasName}'`);
+          return api._setScopeAlias(aliasName, addScopeAlias);
+        },
         runHooks: this._runHooks.bind(this),
         
         // Special addHook that injects plugin name
         addHook: (hookName, functionName, hookAddOptions, handler) => {
+          this._logger.trace(`Plugin '${plugin.name}' adding hook '${hookName}' with function '${functionName}'`);
           return this._addHook(hookName, plugin.name, functionName, hookAddOptions || {}, handler);
         },
         
@@ -1024,6 +1299,9 @@ export class Api {
         vars: this._varsProxy,
         helpers: this._helpersProxy,
         scopes: this.scopes,
+        
+        // Logging
+        log,
         
         // Plugin info
         name: plugin.name,
@@ -1034,7 +1312,12 @@ export class Api {
       
       plugin.install(installContext)
       this._installedPlugins.add(plugin.name)
+      
+      const duration = Date.now() - startTime;
+      this._logger.info(`Plugin '${plugin.name}' installed successfully`, { duration: `${duration}ms` });
     } catch (error) {
+      const duration = Date.now() - startTime;
+      this._logger.error(`Failed to install plugin '${plugin.name}'`, { error: error.message, duration: `${duration}ms` });
       throw new PluginError(
         `Failed to install plugin '${plugin.name}': ${error.message}`,
         {

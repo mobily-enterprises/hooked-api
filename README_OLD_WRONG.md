@@ -2,6 +2,14 @@
 
 A clean, extensible API framework with scopes, hooks, and plugins.
 
+## Plugin architecture
+
+```Javascript
+const api = new Api()
+
+```
+
+
 ## Declare a simple function
 
 Here's the simplest way to create an API with a single method:
@@ -142,6 +150,7 @@ const api = new Api({
     formatTimestamp: (date) => date.toLocaleString('en-US', {  timeZone: 'UTC', hour12: false  })
   },
   hooks: {
+    
     'before-fetch': ({ context }) => {
       console.log('hook called: before-fetch()');
       // Hook adds headers that will be used in the fetch request
@@ -190,33 +199,45 @@ const weatherApi = new Api({
   baseUrl: 'https://api.weather.com'
 }, {
   
+  // NOTE: This is scopeMethods, NOT apiMeethods
   scopeMethods: {
-    get: async ({ params, apiOptions, vars, scope, helpers }) => {
+    get: async ({ params, apiOptions, vars, scope, helpers, context, runHooks, scopeOptions }) => {
       
       // Initialize headers as an object (not array - headers are key-value pairs)
       context.headers = {};
 
+      // All scopes will have to access to scope.validate()
       if (!scope.validate()) {
         throw new Error('Validation error')
       }
 
       // Run the before-fetch hook which can add headers
-      await runHooks('before-fetch', context);
+      await runHooks('before-fetch', context)
 
       // Actually make the request; the URL will depend on the scope
-      context.response = await fetch(`${apiOptions.baseUrl}/${scopeOptions.endpoint}/${params.city}`);
-      context.data = await context.response.json();
+      context.response = await fetch(`${apiOptions.baseUrl}/${scopeOptions.endpoint}/${params.city}`, {
+        headers: context.headers,
+        timeout: vars.timeout
+      })
+      context.data = await context.response.json()
 
       // Format for display using scope-specific hooks
-      await runHooks('format-response', context);
+      await runHooks('format-response', context)
       
-      return context.formattedData;
+      return context.formattedData
     },
 
     validate: async ({ params, apiOptions, vars, helpers }) => {
       return true
     },
+  },
 
+  vars: {
+    timeout: 10000
+  },
+
+  helpers: {
+    formatTimestamp: (date) => date.toLocaleString('en-US', {  timeZone: 'UTC', hour12: false  })
   },
 
 });
@@ -265,6 +286,7 @@ weatherApi.addScope('forecast', {
       };
     }
   }
+  // here validate() is not set for scopeMethods
 });
 
 
@@ -306,10 +328,107 @@ const current = await weatherApi.info.current.get({ city: 'NYC' });
 
 ## Plugins
 
-Plugins are what make this library actually useful.
+Plugins are what make this library actually useful and demonstrate its true extensibility. They allow you to bundle reusable functionalities (API methods, scope methods, hooks, vars, helpers, and even new scopes) into self-contained modules that can be easily added to any Api instance. This promotes code reuse, separation of concerns, and simplifies the development of complex API behaviors.
 
-GEMINI: Write this chapter about plugins, basically making a plugin out of the 
+Imagine you want to add a logging mechanism, authentication features, or a specialized data transformation pipeline that can be applied across different API instances without rewriting the code. That's where plugins shine.
 
+This is the weather code seen above, turned into a plugin.
+
+```Javascript
+// weatherCorePlugin.js
+const weatherCorePlugin = {
+  name: 'weatherCore',
+  
+  dependencies: [], // This plugin stands alone
+  
+  install: ({ addScopeMethod, addScope, vars, helpers, name: pluginName, apiOptions }) => {
+    console.log(`[${pluginName}] Installing core weather functionalities.`);
+    console.log(`[${pluginName}] Base URL for API: ${apiOptions.baseUrl}`);
+
+    // Define common scope methods (like 'get' and 'validate') once
+    addScopeMethod('get', async ({ params, apiOptions, vars, scope, helpers, context, runHooks, scopeOptions }) => {
+      // Initialize headers as an object (not array - headers are key-value pairs)
+      context.headers = {};
+
+      if (!scope.validate()) {
+        throw new Error('Validation error')
+      }
+
+      // Run the before-fetch hook which can add headers
+      await runHooks('before-fetch', context);
+
+      // Actually make the request; the URL will depend on the scope
+      context.response = await fetch(`${apiOptions.baseUrl}/${scopeOptions.endpoint}/${params.city}`, { 
+        headers: context.headers,
+        timeout: vars.timeout
+      });
+      context.data = await context.response.json();
+
+      // Format for display using scope-specific hooks
+      await runHooks('format-response', context);
+      
+      return context.formattedData;
+    });
+
+
+    addScopeMethod('validate', async ({ params, apiOptions, vars, helpers }) => {
+      return true
+    })
+
+    // Vars and helpers
+    vars.timeout = 10000
+    helpers.formatTimestamp = (date) => date.toLocaleString('en-US', {  timeZone: 'UTC', hour12: false  })
+  },
+};
+
+
+
+export default weatherCorePlugin;
+```
+
+## Making a pre-plugged Api class
+
+Most of the time (in fact, probably all of the time) you will want to distibute a ready-to-go class with a
+plugin pre-packaged in it.
+Here is what you do:
+
+```Javascript
+// ExtendedApi.js
+import 'weatherCorePlugin' from './weatherCorePlugin.js' 
+import { Api } from './Api.js'; // Adjust the path to your Api class
+
+class ExtendedApi extends Api {
+
+  constructor(apiOptions = {}, customizeOptions = {}) {
+    
+    // This will add the API to the registry
+    super(apiOptions);
+
+    // Use the core plugin by default
+    this.use(weatherCorePlugin)
+
+    // NOW, after setting all of the defaults, apply user-provided customizeOptions.
+    // These will override any default customizations if keys conflict,
+    this.customize(customizeOptions);
+  }
+}
+
+export default ExtendedApi;
+```
+
+To use it:
+
+```Javascript
+import ExtendedApi from './ExtendedApi,js'
+
+const api = new ExtendedApi({
+  name: 'api',
+  version: '1.0.0',
+  baseUrl: 'https://example.com/'
+})
+
+
+```
 
 ## Public API Surface
 

@@ -6,50 +6,73 @@ lifecycle of a call.
 
 Your API users will be able to define scopes and hooks to manipulate how the API calls behave.
 
-The end result would look like this:
+This library allows you to create APIs that can be extended with plugins and hooks.
+
+The end result of a database layer API could look like this:
 
 ```javascript
+import { DbApi } from 'DbApi.js'
+import { GeneratedOnPlugin } from 'GeneratedOnPlugin.js'
+
 const api = new DbApi()
-import { db } from 'db.js'
 
 // Add MySql connector with a Plugin
-api.use(MySqlPlugin)
+api.use(GeneratedOnPlugin)
 
-db.addTable('books',
+// That's it, "api" is ready to use!
+```
+
+To use it:
+
+```javascript
+// Add scopes (one per table)
+api.addScope('books',
   {
     schema: {
       title: 'string',
       rating: 'number',
-    }
+    },
   },
   {
-    hooks: {
-      afterFetch: async ({ context, params })  => {
-        context.fetchedData.generatedOn = new Date()
+    hooks:
+      afterFetch: ({context}) => {
+        context.record.titleAndRating = context.record.title + ' ' + context.record.rating
       }
-    }
   }
 )
 
-db.addTable('authors',
+api.addScope('authors',
   {
     schema: {
-      bookId: 'id'
       fullName: 'string',
-    }
+      bookId: 'id'
+    },
   }
 )
 
-// ...
 
-api.table.books.get('10') // It will include 'generatedOn'
-api.table.authors.get('20')
+const author = await api.scopes.authors.get(10);
+/* Returns:
+  { 
+    id: 10,
+    name: "Umberto Eco",
+    generatedOn: 2025-06-28T01:35:40.971Z,
+  } 
+*/
+
+const book = await api.scopes.books.get(20);
+/* Returns: 
+  { 
+    id: 1,
+    title: "The Name of the Rose",
+    rating: 10,
+    titleAndRating: "The Name Of The Rose 10",
+    generatedOn: 2025-06-28T01:35:40.971Z,
+  } 
+*/
 ```
 
-This library provides all you need to create APIs that have the ability to be extended using plugins.
-
-The following examples will explain how the API works.
-
+Note that `generatedOn` was added by the `GeneratedOn` plugin.
 
 Note: in these examples, `db` will be mocked as an object that does very little:
 
@@ -64,6 +87,8 @@ export const db = {
 }
 ```
 
+This guide is focussed on creating exactly the example API shown above.
+
 ## First steps: declare a simple function
 
 Here's the simplest way to create an API with a single method:
@@ -75,11 +100,10 @@ import { db } from 'db.js'
 const api = new Api({
   name: 'library-api',
   version: '1.0.0',
-  databaseName: 'company_db'
 }, {
   apiMethods: {
-    getUser: async ({ params }) => { 
-      const response = await db.fetch('users', params.id)
+    getAuthor: async ({ params }) => { 
+      const response = await db.fetch('authors', params.id)
       return response.json();
     }
   }
@@ -88,10 +112,10 @@ const api = new Api({
 
 Anything defined in `apiMethods` will be automatically available as an API method:
 
-To use this API, you simply call the `getUser()` method:
+To use this API, you simply call the `getAuthor()` method:
 
 ```javascript
-const user = await api.getUser({ id: 100 });
+const user = await api.getAuthor({ id: 100 });
 ```
 
 Of course, you could do this by just plain Javascript:
@@ -101,8 +125,8 @@ import { db } from 'db.js'
 const databaseName = 'company_db'
 const api = {}
 
-api.getUser: async (params) => {
-  const response = await db.fetch('users', params.id)
+api.getAuthor: async (params) => {
+  const response = await db.fetch('authors', params.id)
   return response.json();
 }
 ```
@@ -123,8 +147,8 @@ const api = new Api({
   databaseName: 'company_db'
 }, {
   apiMethods: {
-    getUser: async ({ params, helpers }) => { 
-      const response = await db.fetch('users', params.id, { timeout: vars.timeout})
+    getAuthor: async ({ params, helpers }) => { 
+      const response = await db.fetch('authors', params.id, { timeout: vars.timeout})
       data = response.json();
       data.generatedOn = helpers.makeDate()
       return data
@@ -139,7 +163,7 @@ const api = new Api({
 });
 
 // Usage is identical
-const user = await api.getUser({ id: 100 });
+const user = await api.getAuthor({ id: 100 });
 ```
 
 As you can see, you can create variables (`vars`) and helpers (`helpers`) when you create the API, and you are able to
@@ -161,12 +185,12 @@ const api = new Api({
   databaseName: 'company_db'
 }, {
   apiMethods: {
-    getUser: async ({ context, params, helpers }) => {       
+    getAuthor: async ({ context, params, helpers }) => {       
       // Run the before-fetch hooks
       await runHooks('beforeFetch', context);
  
       // Fetch the data
-      const response = await db.fetch('users', params.id, { timeout: vars.timeout})
+      const response = await db.fetch('authors', params.id, { timeout: vars.timeout})
       context.record = response.json();
 
       // Run the after-fetch hooks
@@ -193,7 +217,8 @@ Here, the data manipulation was delegated to a hook, whoch added the random fiel
 
 ## Scopes: Organizing Different Types of Data
 
-In many cases it's crucial to have `scopes`; in this case, we will map a scope to a database table:
+In many cases it's crucial to have `scopes`; in this case, we will map a scope to a database table.
+Note that the property `scopeMethods` is used instead of `apiMethods`:
 
 ```javascript
 import { Api } from 'hooked-api'
@@ -202,7 +227,6 @@ import { db } from 'db.js'
 const api = new Api({
   name: 'linrary-api',
   version: '1.0.0',
-  databaseName: 'company_db'
 }, {
   // Note that we are now definint scope methods...
   scopeMethods: {
@@ -379,6 +403,7 @@ const GeneratedOnPlugin = {
 };
 ```
 
+This plugin will be available to library users who want to add the `generatedOn` field to their records.
 At this point, you can just make a new Api object, and add the two plugins to it:
 
 ```javascript
@@ -401,7 +426,7 @@ api.use(GeneratedOnPlugin)
 ## Making a pre-hooked Api class
 
 Most of the time (in fact, probably all of the time) you will want to distibute a ready-to-go class with a
-plugin pre-packaged in it.
+base, initial plugin pre-used in it.
 Here is what you do:
 
 ```Javascript
@@ -497,7 +522,7 @@ The API instance exposes only these public properties and methods:
   context,         // Mutable object for passing data between hooks
   vars,            // Variables proxy (merged with scope vars)
   helpers,         // Helpers proxy (merged with scope helpers)
-  scope,           // Current scope object (e.g., api.scopes.users when in 'users' scope)
+  scope,           // Current scope object (e.g., api.scopes.users when in 'authors' scope)
   scopes,          // All scopes proxy (api.scopes)
   runHooks,        // Function to run hooks
   name,            // The method name ('method' in this case)

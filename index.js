@@ -393,9 +393,9 @@ export class Api {
     };
   }
 
-  async _runHooks(name, context, scope = null) {
+  async _runHooks(name, context, scopeName = null) {
     const handlers = this._hooks.get(name) || []
-    const handlerContext = scope ? this._buildScopeContext(scope) : this._buildGlobalContext();
+    const handlerContext = scopeName ? this._buildScopeContext(scopeName) : this._buildGlobalContext();
     
     this._isRunningHooks = true;
     try {
@@ -409,7 +409,7 @@ export class Api {
           // Data access
           vars: handlerContext.vars,
           helpers: handlerContext.helpers,
-          scope: scope ? handlerContext.scopes[scope] : null,  // Current scope if in scope context
+          scope: scopeName ? handlerContext.scopes[scopeName] : null,  // Current scope if in scope context
           scopes: handlerContext.scopes,                        // All scopes proxy
           
           // Capabilities
@@ -421,7 +421,7 @@ export class Api {
           apiOptions: handlerContext.apiOptions,
           pluginOptions: handlerContext.pluginOptions,
           scopeOptions: handlerContext.scopeOptions,
-          scopeName: scope
+          scopeName
         };
         
         // Add alias if one is set

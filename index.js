@@ -857,6 +857,16 @@ export class Api {
         }
       );
     }
+    if (isDangerousProp(method)) {
+      throw new ValidationError(
+        `Method name '${method}' is reserved for security reasons. These names can lead to prototype pollution vulnerabilities. Choose a different name.`,
+        {
+          field: 'method',
+          value: method,
+          validValues: 'non-dangerous JavaScript identifier'
+        }
+      );
+    }
     if (typeof handler !== 'function') {
       throw new ValidationError(
         `Implementation for '${method}' must be a function. Received: ${typeof handler}. Example: addApiMethod('${method}', async (context) => { /* handler code */ })`,
@@ -914,6 +924,16 @@ export class Api {
           field: 'method', 
           value: method,
           validValues: 'valid JavaScript identifier'
+        }
+      );
+    }
+    if (isDangerousProp(method)) {
+      throw new ValidationError(
+        `Scope method name '${method}' is reserved for security reasons. These names can lead to prototype pollution vulnerabilities. Choose a different name.`,
+        {
+          field: 'method',
+          value: method,
+          validValues: 'non-dangerous JavaScript identifier'
         }
       );
     }
@@ -1029,6 +1049,16 @@ export class Api {
           field: 'name',
           value: name,
           validValues: 'valid JavaScript identifier'
+        }
+      );
+    }
+    if (isDangerousProp(name)) {
+      throw new ValidationError(
+        `Scope name '${name}' is reserved for security reasons. These names can lead to prototype pollution vulnerabilities. Choose a different name.`,
+        {
+          field: 'name',
+          value: name,
+          validValues: 'non-dangerous JavaScript identifier'
         }
       );
     }

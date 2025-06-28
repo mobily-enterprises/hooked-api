@@ -31,7 +31,6 @@ export class Api {
     // Store API options (will be frozen when building contexts)
     this._apiOptions = { ...this.options }
     this._pluginOptions = {} // Mutable object for plugin options
-    this._isRunningHooks = false
     this._scopeAlias = null // Track the scope alias if set
     this._addScopeAlias = null // Track the addScope alias if set
     
@@ -279,9 +278,6 @@ export class Api {
   }
 
   _addHook(hookName, pluginName, functionName, hookAddOptions, handler) {
-    if (this._isRunningHooks) {
-      throw new Error('Cannot add hooks while hooks are executing');
-    }
     if (!pluginName?.trim()) throw new Error(`Hook '${hookName}' requires a valid pluginName`)
     if (!functionName?.trim()) throw new Error(`Hook '${hookName}' requires a valid functionName`)
     if (typeof handler !== 'function') throw new Error(`Hook '${hookName}' handler must be a function`)
@@ -395,9 +391,7 @@ export class Api {
     const handlers = this._hooks.get(name) || []
     const handlerContext = scopeName ? this._buildScopeContext(scopeName) : this._buildGlobalContext();
     
-    this._isRunningHooks = true;
-    try {
-      for (const { handler, pluginName, functionName } of handlers) {
+    for (const { handler, pluginName, functionName } of handlers) {
         // Flatten the handler parameters
         const handlerParams = { 
           // User data
@@ -431,9 +425,6 @@ export class Api {
           // Hook returned false - stop the chain
           break
         }
-      }
-    } finally {
-      this._isRunningHooks = false;
     }
     return context;
   }

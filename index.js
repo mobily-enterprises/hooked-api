@@ -1,6 +1,9 @@
 import semver from 'semver'
 
 let globalRegistry = new Map()
+const VALID_JS_IDENTIFIER = /^[a-zA-Z_$][a-zA-Z0-9_$]*$/
+const DANGEROUS_PROPS = ['__proto__', 'constructor', 'prototype']
+const isDangerousProp = (prop) => DANGEROUS_PROPS.includes(prop)
 
 export class Api {
   constructor(options = {}, customizeOptions = {}) {
@@ -36,6 +39,10 @@ export class Api {
     this._varsProxy = new Proxy({}, {
       get: (target, prop) => this._vars.get(prop),
       set: (target, prop, value) => {
+        // Prevent prototype pollution
+        if (isDangerousProp(prop)) {
+          return false;
+        }
         this._vars.set(prop, value);
         return true;
       }
@@ -43,6 +50,10 @@ export class Api {
     this._helpersProxy = new Proxy({}, {
       get: (target, prop) => this._helpers.get(prop),
       set: (target, prop, value) => {
+        // Prevent prototype pollution
+        if (isDangerousProp(prop)) {
+          return false;
+        }
         this._helpers.set(prop, value);
         return true;
       }
@@ -52,7 +63,7 @@ export class Api {
     this.scopes = new Proxy({}, {
       get: (target, scopeName) => {
         // Prevent prototype pollution and symbol-based bypasses
-        if (typeof scopeName === 'symbol' || scopeName === 'constructor' || scopeName === '__proto__') {
+        if (typeof scopeName === 'symbol' || isDangerousProp(scopeName)) {
           return undefined;
         }
         
@@ -444,8 +455,11 @@ export class Api {
 
 
   _addApiMethod(method, handler) {
-    if (method === null || method === undefined) {
-      throw new Error('Method name is required');
+    if (!method || typeof method !== 'string') {
+      throw new Error('Method name must be a non-empty string');
+    }
+    if (!VALID_JS_IDENTIFIER.test(method)) {
+      throw new Error(`Method name '${method}' is not a valid JavaScript identifier`);
     }
     if (typeof handler !== 'function') {
       throw new Error(`Implementation for '${method}' must be a function.`)
@@ -461,8 +475,11 @@ export class Api {
   }
 
   _addScopeMethod(method, handler) {
-    if (method === null || method === undefined) {
-      throw new Error('Method name is required');
+    if (!method || typeof method !== 'string') {
+      throw new Error('Method name must be a non-empty string');
+    }
+    if (!VALID_JS_IDENTIFIER.test(method)) {
+      throw new Error(`Method name '${method}' is not a valid JavaScript identifier`);
     }
     if (typeof handler !== 'function') {
       throw new Error(`Implementation for '${method}' must be a function.`)
@@ -522,6 +539,12 @@ export class Api {
   }
 
   _addScope(name, options = {}, extras = {}) {
+    if (!name || typeof name !== 'string') {
+      throw new Error('Scope name must be a non-empty string');
+    }
+    if (!VALID_JS_IDENTIFIER.test(name)) {
+      throw new Error(`Scope name '${name}' is not a valid JavaScript identifier`);
+    }
     if (this._scopes.has(name)) {
       throw new Error(`Scope '${name}' already exists`);
     }

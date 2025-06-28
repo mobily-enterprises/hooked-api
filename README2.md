@@ -57,7 +57,6 @@ Note: in these examples, `db` will be mocked as an object that does very little:
 // db.js
 
 export const db = {
-  use: () => {},
   fetch: (table, id ) => {
     if (table == 'books') return { title: "The Name of the Rose", rating: 10, id}
     else if (table === 'authors') return { make: "Umberto Eco", id, bookId: 100}
@@ -74,13 +73,12 @@ import { Api } from 'hooked-api';
 import { db } from 'db.js'
 
 const api = new Api({
-  name: 'dbConnect',
+  name: 'library-api',
   version: '1.0.0',
   databaseName: 'company_db'
 }, {
   apiMethods: {
     getUser: async ({ params }) => { 
-      db.use(apiOptions.databaseName)   
       const response = await db.fetch('users', params.id)
       return response.json();
     }
@@ -104,7 +102,6 @@ const databaseName = 'company_db'
 const api = {}
 
 api.getUser: async (params) => {
-  db.use(databaseName) 
   const response = await db.fetch('users', params.id)
   return response.json();
 }
@@ -121,16 +118,15 @@ import { Api } from 'hooked-api'
 import { db } from 'db.js'
 
 const api = new Api({
-  name: 'dbConnect',
+  name: 'library-api',
   version: '1.0.0',
   databaseName: 'company_db'
 }, {
   apiMethods: {
     getUser: async ({ params, helpers }) => { 
-      db.use(apiOptions.databaseName)   
       const response = await db.fetch('users', params.id, { timeout: vars.timeout})
       data = response.json();
-      data.generatedOn = helpers.makeGeneratedOn()
+      data.generatedOn = helpers.makeDate()
       return data
     }
   },
@@ -138,7 +134,7 @@ const api = new Api({
     timeout: 10000
   },
   helpers: {
-    makeGeneratedOn: () => new Date()
+    makeDate: () => new Date()
   }
 });
 
@@ -160,14 +156,12 @@ import { Api } from 'hooked-api';
 import { db } from 'db.js'
 
 const api = new Api({
-  name: 'dbConnect',
+  name: 'library-api',
   version: '1.0.0',
   databaseName: 'company_db'
 }, {
   apiMethods: {
-    getUser: async ({ context, params, helpers }) => { 
-      db.use(apiOptions.databaseName)
-      
+    getUser: async ({ context, params, helpers }) => {       
       // Run the before-fetch hooks
       await runHooks('beforeFetch', context);
  
@@ -185,11 +179,11 @@ const api = new Api({
     timeout: 10000
   },
   helpers: {
-    makeGeneratedOn: () => new Date()
+    makeDate: () => new Date()
   },
   hooks: {
     afterFetch: ({context, helpers}) => {
-      context.record.generatedOn = helpers.makeGeneratedOn()
+      context.record.generatedOn = helpers.makeDate()
     }
   }
 });
@@ -206,16 +200,13 @@ import { Api } from 'hooked-api'
 import { db } from 'db.js'
 
 const api = new Api({
-  name: 'dbConnect',
+  name: 'linrary-api',
   version: '1.0.0',
   databaseName: 'company_db'
 }, {
   // Note that we are now definint scope methods...
   scopeMethods: {
     get: async ({ context, scopeOptions, params, helpers, scopeName }) => { 
-      db.use(apiOptions.databaseName)
-      
-
 
       // Run the before-fetch hooks
       await runHooks('beforeFetch', context);
@@ -234,12 +225,12 @@ const api = new Api({
     timeout: 10000
   },
   helpers: {
-    makeGeneratedOn: () => new Date()
+    makeDate: () => new Date()
   },
   hooks: {
     // No matter what table is fetched, every record will have this timestamp
     afterFetch: ({context, helpers}) => {
-      context.record.generatedOn = helpers.makeGeneratedOn()
+      context.record.generatedOn = helpers.makeDate()
     }
   }
 });
@@ -335,52 +326,76 @@ Imagine you want to add a logging mechanism, authentication features, or a speci
 This is the weather code seen above, turned into a plugin.
 
 ```Javascript
-// weatherCorePlugin.js
+// DatabasePlugin.js
 const DatabasePlugin = {
-  name: 'dbConnect',
+  name: 'DatabasePlugin',
   
   dependencies: [], // This plugin stands alone
   
   install: ({ addScopeMethod, addScope, vars, helpers, name: pluginName, apiOptions }) => {
   
-    addScopeMethod('get', async ({ params, apiOptions, vars, scope, helpers, context, runHooks, scopeOptions }) => {
-      // Initialize headers as an object (not array - headers are key-value pairs)
-      context.headers = {};
+    addScopeMethod('get', async ({ context, scopeOptions, params, helpers, scopeName }) => {
+      // Run the before-fetch hooks
+      await runHooks('beforeFetch', context);
+ 
+      // Fetch the data. The table used will depend on the scope name
+      const response = await db.fetch(scopeName, params.id, { timeout: vars.timeout})
+      context.record = response.json();
 
-      if (!scope.validate()) {
-        throw new Error('Validation error')
-      }
-
-      // Run the before-fetch hook which can add headers
-      await runHooks('before-fetch', context);
-
-      // Actually make the request; the URL will depend on the scope
-      context.response = await fetch(`${apiOptions.baseUrl}/${scopeOptions.endpoint}/${params.city}`, { 
-        headers: context.headers,
-        timeout: vars.timeout
-      });
-      context.data = await context.response.json();
-
-      // Format for display using scope-specific hooks
-      await runHooks('format-response', context);
-      
-      return context.formattedData;
+      // Run the after-fetch hooks
+      await runHooks('afterFetch', context);
+ 
+      return context.record
     });
 
-
-    addScopeMethod('validate', async ({ params, apiOptions, vars, helpers }) => {
-      return true
-    })
-
-    // Vars and helpers
+    // Set vars and helpers directly
     vars.timeout = 10000
-    helpers.formatTimestamp = (date) => date.toLocaleString('en-US', {  timeZone: 'UTC', hour12: false  })
   },
 };
 
+export default DatabasePlugin;
+```
+
+We should also add a GeneratedOnPlugin, like this:
+
+```javascript
+// GeneratedOnPlugin.js
+import { db } from 'db.js'
+const GeneratedOnPlugin = {
+  name: 'GeneratedOnPlugin',
+  
+  dependencies: ['DatabasePlugin'], // This plugin stands alone
+  
+  install: ({ addScopeMethod, addHook vars, helpers, name: pluginName, apiOptions }) => {
+
+    // The helper used by the hook
+    helpers.makeDate = () => new Date()
+
+    // The hook that will 
+    addHook('afterFetch', 'addGenerateOn', ({context, helpers}) => {
+      context.record.generatedOn = helpers.makeDate()
+    })
+  },
+};
+```
+
+At this point, you can just make a new Api object, and add the two plugins to it:
+
+```javascript
+import { DatabasePlugin } from './DatabasePlugin.js'
+import { GeneratedOnPlugin } from './GeneratedonPlugin.js'
 
 
-export default weatherCorePlugin;
+const api = new Api({
+  name: 'library-api',
+  version: '1.0.0'
+})
+
+api.use(DatabasePlugin)
+api.use(GeneratedOnPlugin)
+
+// api.addScope('books', ...)
+// api.addScope('authors', ...)
 ```
 
 ## Making a pre-hooked Api class
@@ -390,11 +405,11 @@ plugin pre-packaged in it.
 Here is what you do:
 
 ```Javascript
-// ExtendedApi.js
-import 'weatherCorePlugin' from './weatherCorePlugin.js' 
+// DbApi.js
+import { DatabasePlugin } from './DatabasePlugin.js'
 import { Api } from './Api.js'; // Adjust the path to your Api class
 
-class ExtendedApi extends Api {
+class DbApi extends Api {
 
   constructor(apiOptions = {}, customizeOptions = {}) {
     
@@ -402,7 +417,7 @@ class ExtendedApi extends Api {
     super(apiOptions);
 
     // Use the core plugin by default
-    this.use(weatherCorePlugin)
+    this.use(DatabasePlugin)
 
     // NOW, after setting all of the defaults, apply user-provided customizeOptions.
     // These will override any default customizations if keys conflict,
@@ -410,21 +425,30 @@ class ExtendedApi extends Api {
   }
 }
 
-export default ExtendedApi;
+export default DbApi;
 ```
 
 To use it:
 
 ```Javascript
-import ExtendedApi from './ExtendedApi,js'
+import { DbApi } from './DbApi.js'
+import { GeneratedOnPlugin } from './GeneratedonPlugin.js'
 
-const api = new ExtendedApi({
-  name: 'api',
-  version: '1.0.0',
-  baseUrl: 'https://example.com/'
+
+const api = new DbApi({
+  name: 'library-api',
+  version: '1.0.0'
 })
 
+// NO NEED to do this, since DbApi already comes with it
+// api.use(DatabasePlugin)
 
+// You can add "GeneratedOnPlugin" if you like
+api.use(GeneratedOnPlugin)
+
+// Then add books as you wish
+// api.addScope('books', ...)
+// api.addScope('authors', ...)
 ```
 
 ## Public API Surface

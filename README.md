@@ -292,158 +292,11 @@ this case, we defined `schema` (which at this point is not used in the current i
 Both scopes will return records with `generatedOn` set to the current date, but only `books` will have 
 `titleAndRating` since the hook is limited to the `books` scope. 
 
-## Logging
-
-The API includes built-in logging capabilities with customizable log levels, formats, and outputs.
-
-### Configuration
-
-Configure logging when creating an API instance. The defaults are shown below:
+Attempting to call a scope directly throws a helpful error:
 
 ```javascript
-const api = new Api({
-  name: 'my-api',
-  version: '1.0.0',
-  logging: {
-    level: 'info',        // 'error', 'warn', 'info', 'debug', 'trace'
-    format: 'pretty',     // 'pretty' or 'json'
-    timestamp: true,      // Include timestamps in logs
-    colors: true,         // Use ANSI colors (only with 'pretty' format)
-    logger: console       // Custom logger object (must have log/error/warn methods)
-  }
-});
+api.scopes.users() // Throws: "Direct scope call not supported. Use api.scopes.users.methodName()"
 ```
-
-**Note:** When providing partial logging configuration, always include the `logger` property to avoid issues:
-
-```javascript
-// Good - includes logger
-const api = new Api({
-  name: 'my-api',
-  version: '1.0.0',
-  logging: { level: 'debug', logger: console }
-});
-
-// May cause issues - missing logger
-const api = new Api({
-  name: 'my-api',
-  version: '1.0.0',
-  logging: { level: 'debug' }  // Missing logger property
-});
-```
-
-### Log Levels
-
-Available log levels (from least to most verbose):
-- `error` (0) - Only errors
-- `warn` (1) - Warnings and errors
-- `info` (2) - General information, warnings, and errors (default)
-- `debug` (3) - Detailed debugging information
-- `trace` (4) - Very detailed trace information
-
-You can also use numeric levels with the `LogLevel` export:
-
-```javascript
-import { Api, LogLevel } from './index.js';
-
-const api = new Api({
-  name: 'my-api',
-  version: '1.0.0',
-  logging: { level: LogLevel.DEBUG }
-});
-```
-
-### Using Logging in Handlers
-
-All handlers receive a `log` object with level-specific methods:
-
-```javascript
-apiMethods: {
-  getData: async ({ params, log, vars }) => {
-    log.debug('Getting data', { params });
-    
-    try {
-      const result = await fetchData(params);
-      log.info('Data retrieved successfully', { count: result.length });
-      return result;
-    } catch (error) {
-      log.error('Failed to get data', { error: error.message });
-      throw error;
-    }
-  }
-}
-```
-
-### Scope-Specific Logging
-
-Scopes can have their own log levels:
-
-```javascript
-api.addScope('users', {
-  logging: { level: 'debug' },  // More verbose for this scope
-  schema: { /* ... */ }
-});
-```
-
-### Log Output Examples
-
-**Pretty format (default):**
-```
-2025-06-28T12:00:00.000Z [INFO] [my-api:getData] Data retrieved successfully { count: 42 }
-2025-06-28T12:00:01.000Z [ERROR] [my-api:users.create] Validation failed { field: 'email' }
-```
-
-**JSON format:**
-```json
-{"level":"INFO","api":"my-api","context":"getData","message":"Data retrieved successfully","data":{"count":42},"timestamp":"2025-06-28T12:00:00.000Z"}
-```
-
-### Custom Logger
-
-You can provide a custom logger implementation:
-
-```javascript
-const customLogger = {
-  log: (message) => fs.appendFileSync('app.log', message + '\n'),
-  error: (message) => fs.appendFileSync('error.log', message + '\n'),
-  warn: (message) => fs.appendFileSync('warn.log', message + '\n')
-};
-
-const api = new Api({
-  name: 'my-api',
-  version: '1.0.0',
-  logging: { logger: customLogger }
-});
-```
-
-To use it:
-
-```javascript
-const author = await api.scopes.authors.get({id: 10});
-/* Returns:
-  { 
-    id: 10,
-    fullName: "Umberto Eco",
-    generatedOn: 2025-06-28T01:35:40.971Z,
-  } 
-*/
-
-const book = await api.scopes.books.get({id: 20});
-/* Returns: 
-  { 
-    id: 20,
-    title: "The Name Of the Rose",
-    rating: 10,
-    titleAndRating: "The Name Of The Rose 10",
-    generatedOn: 2025-06-28T01:35:40.971Z,
-  } 
-*/
-```
-
-Notice how:
-- The `get` method is defined once in `scopeMethods` and works the same for all scopes
-- The `books` scope uses **hooks** to customize the record. 
-- Each scope returns completely different data structures despite using the same method
 
 ## Scope Aliases
 
@@ -599,6 +452,767 @@ api.use(GeneratedOnPlugin)
 // api.addScope('authors', ...)
 ```
 
+## Hook Placement Options
+
+When adding hooks, you can control their execution order using placement options. This is useful when you need hooks to run in a specific sequence, regardless of when plugins are installed.
+
+Consider this scenario: You want to add logging to DbApi, but you need to log the original fetched record BEFORE any modifications:
+
+```javascript
+// LoggingPlugin.js - A plugin that logs data access
+const LoggingPlugin = {
+  name: 'LoggingPlugin',
+  install: ({ addHook }) => {
+    // Run BEFORE any hooks from GeneratedOnPlugin
+    addHook('afterFetch', 'logFetch', {
+      beforePlugin: 'GeneratedOnPlugin'
+    }, ({ context, log }) => {
+      log.debug('Original fetched record:', context.record);
+      // This logs the record WITHOUT generatedOn
+    });
+  }
+};
+
+// DbApi.js - Updated to include logging
+import { DatabasePlugin } from './DatabasePlugin.js'
+import { LoggingPlugin } from './LoggingPlugin.js'
+import { Api } from './index.js';
+
+class DbApi extends Api {
+  constructor(apiOptions = {}, customizeOptions = {}) {
+    super(apiOptions, customizeOptions);
+
+    // Use the core plugins
+    this.use(DatabasePlugin);
+    this.use(LoggingPlugin);  // Logging added to base API
+    
+    this.customize(customizeOptions);
+  }
+}
+
+// Usage
+const api = new DbApi({ name: 'library-api', version: '1.0.0' });
+api.use(GeneratedOnPlugin);  // User adds this plugin
+
+// Even though LoggingPlugin was installed BEFORE GeneratedOnPlugin,
+// the 'beforePlugin' option ensures it logs the original record
+```
+
+### Available Placement Options
+
+- `beforePlugin: 'PluginName'` - Run before all hooks from the specified plugin
+- `afterPlugin: 'PluginName'` - Run after all hooks from the specified plugin
+- `beforeFunction: 'functionName'` - Run before a specific hook function
+- `afterFunction: 'functionName'` - Run after a specific hook function
+
+Only one placement option can be used per hook.
+
+### Example: Using beforeFunction/afterFunction
+
+The `beforeFunction` and `afterFunction` options let you target specific hook functions by name, which is useful when multiple plugins might have the same plugin name or when you need fine-grained control:
+
+```javascript
+// ValidationPlugin with multiple hooks
+const ValidationPlugin = {
+  name: 'ValidationPlugin',
+  install: ({ addHook }) => {
+    // First validation - check required fields
+    addHook('beforeSave', 'validateRequired', {}, ({ context }) => {
+      if (!context.record.title) {
+        throw new Error('Title is required');
+      }
+    });
+    
+    // Second validation - check data types
+    addHook('beforeSave', 'validateTypes', {}, ({ context }) => {
+      if (typeof context.record.rating !== 'number') {
+        throw new Error('Rating must be a number');
+      }
+    });
+  }
+};
+
+// SanitizationPlugin needs to run between the two validations
+const SanitizationPlugin = {
+  name: 'SanitizationPlugin',
+  install: ({ addHook }) => {
+    addHook('beforeSave', 'sanitize', {
+      afterFunction: 'validateRequired',  // Run AFTER required field check
+      // This ensures we sanitize before type validation
+    }, ({ context }) => {
+      // Convert rating to number if it's a string
+      if (typeof context.record.rating === 'string') {
+        context.record.rating = parseInt(context.record.rating, 10);
+      }
+    });
+  }
+};
+
+// Usage
+api.use(ValidationPlugin);
+api.use(SanitizationPlugin);
+
+// Hook execution order for 'beforeSave':
+// 1. validateRequired (checks if title exists)
+// 2. sanitize (converts rating "10" to 10)
+// 3. validateTypes (now passes because rating is a number)
+```
+
+This example shows why `beforeFunction`/`afterFunction` are useful: they let you insert hooks at specific points within a plugin's hook chain, not just before or after the entire plugin.
+
+### Hook Execution Control
+
+Hooks can return `false` to stop the execution of remaining hooks in the chain.
+
+## Logging
+
+The API includes built-in logging capabilities with customizable log levels, formats, and outputs.
+
+
+
+### Configuration
+
+Configure logging when creating an API instance. The defaults are shown below:
+
+```javascript
+const api = new Api({
+  name: 'my-api',
+  version: '1.0.0',
+  logging: {
+    level: 'info',        // 'error', 'warn', 'info', 'debug', 'trace'
+    format: 'pretty',     // 'pretty' or 'json'
+    timestamp: true,      // Include timestamps in logs
+    colors: true,         // Use ANSI colors (only with 'pretty' format)
+    logger: console       // Custom logger object (must have log/error/warn methods)
+  }
+});
+```
+
+**Note:** When providing partial logging configuration, always include the `logger` property to avoid issues:
+
+```javascript
+// Good - includes logger
+const api = new Api({
+  name: 'my-api',
+  version: '1.0.0',
+  logging: { level: 'debug', logger: console }
+});
+
+// May cause issues - missing logger
+const api = new Api({
+  name: 'my-api',
+  version: '1.0.0',
+  logging: { level: 'debug' }  // Missing logger property
+});
+```
+
+### Log Levels
+
+Available log levels (from least to most verbose):
+- `error` (0) - Only errors
+- `warn` (1) - Warnings and errors
+- `info` (2) - General information, warnings, and errors (default)
+- `debug` (3) - Detailed debugging information
+- `trace` (4) - Very detailed trace information
+
+You can also use numeric levels with the `LogLevel` export:
+
+```javascript
+import { Api, LogLevel } from './index.js';
+
+const api = new Api({
+  name: 'my-api',
+  version: '1.0.0',
+  logging: { level: LogLevel.DEBUG }
+});
+```
+
+### Using Logging in Handlers
+
+All handlers receive a `log` object with level-specific methods:
+
+```javascript
+apiMethods: {
+  getData: async ({ params, log, vars }) => {
+    log.debug('Getting data', { params });
+    
+    try {
+      const result = await fetchData(params);
+      log.info('Data retrieved successfully', { count: result.length });
+      return result;
+    } catch (error) {
+      log.error('Failed to get data', { error: error.message });
+      throw error;
+    }
+  }
+}
+```
+
+### Scope-Specific Logging
+
+Scopes can have their own log levels:
+
+```javascript
+api.addScope('users', {
+  logging: { level: 'debug' },  // More verbose for this scope
+  schema: { /* ... */ }
+});
+```
+
+### Log Output Examples
+
+**Pretty format (default):**
+```
+2025-06-28T12:00:00.000Z [INFO] [my-api:getData] Data retrieved successfully { count: 42 }
+2025-06-28T12:00:01.000Z [ERROR] [my-api:users.create] Validation failed { field: 'email' }
+```
+
+**JSON format:**
+```json
+{"level":"INFO","api":"my-api","context":"getData","message":"Data retrieved successfully","data":{"count":42},"timestamp":"2025-06-28T12:00:00.000Z"}
+```
+
+### Custom Logger
+
+You can provide a custom logger implementation:
+
+```javascript
+const customLogger = {
+  log: (message) => fs.appendFileSync('app.log', message + '\n'),
+  error: (message) => fs.appendFileSync('error.log', message + '\n'),
+  warn: (message) => fs.appendFileSync('warn.log', message + '\n')
+};
+
+const api = new Api({
+  name: 'my-api',
+  version: '1.0.0',
+  logging: { logger: customLogger }
+});
+```
+
+To use it:
+
+```javascript
+const author = await api.scopes.authors.get({id: 10});
+/* Returns:
+  { 
+    id: 10,
+    fullName: "Umberto Eco",
+    generatedOn: 2025-06-28T01:35:40.971Z,
+  } 
+*/
+
+const book = await api.scopes.books.get({id: 20});
+/* Returns: 
+  { 
+    id: 20,
+    title: "The Name Of the Rose",
+    rating: 10,
+    titleAndRating: "The Name Of The Rose 10",
+    generatedOn: 2025-06-28T01:35:40.971Z,
+  } 
+*/
+```
+
+Notice how:
+- The `get` method is defined once in `scopeMethods` and works the same for all scopes
+- The `books` scope uses **hooks** to customize the record. 
+- Each scope returns completely different data structures despite using the same method
+
+## Security
+
+Hooked API includes several security features to protect against common vulnerabilities and ensure safe operation.
+
+### Prototype Pollution Protection
+
+The library actively prevents prototype pollution attacks by blocking access to dangerous properties:
+
+```javascript
+// These property names are blocked in all contexts
+const DANGEROUS_PROPS = ['__proto__', 'constructor', 'prototype'];
+
+// Attempting to use these will throw an error
+api.addScope('__proto__', {});  // Throws ValidationError
+api.customize({
+  apiMethods: {
+    constructor: async () => {}  // Throws ValidationError
+  }
+});
+```
+
+### Input Validation
+
+All method and scope names must be valid JavaScript identifiers to prevent injection attacks:
+
+```javascript
+// Valid names (matching /^[a-zA-Z_$][a-zA-Z0-9_$]*$/)
+api.addScope('users', {});         // ✓ Valid
+api.addScope('_private', {});      // ✓ Valid
+api.addScope('$special', {});      // ✓ Valid
+
+// Invalid names throw ValidationError with helpful messages
+api.addScope('user-list', {});     // ✗ Invalid: contains '-'
+api.addScope('123users', {});      // ✗ Invalid: starts with number
+api.addScope('user.list', {});     // ✗ Invalid: contains '.'
+```
+
+When validation fails, the library provides detailed error messages:
+- Lists the invalid characters found
+- Suggests valid alternatives (e.g., "user_list" instead of "user-list")
+- Shows examples of valid names
+
+### Reserved Names and Conflict Prevention
+
+The library prevents overwriting critical API properties:
+
+```javascript
+// Reserved plugin names
+api.use({
+  name: 'api',      // Throws PluginError: 'api' is reserved
+  install: () => {}
+});
+
+api.use({
+  name: 'scopes',   // Throws PluginError: 'scopes' is reserved
+  install: () => {}
+});
+
+// Property conflict detection
+api.customize({
+  apiMethods: {
+    use: async () => {}  // Throws MethodError: 'use' already exists
+  }
+});
+```
+
+### Duplicate Detection
+
+The library prevents duplicate registrations across multiple contexts:
+
+```javascript
+// Duplicate API versions
+new Api({ name: 'my-api', version: '1.0.0' });
+new Api({ name: 'my-api', version: '1.0.0' }); // Throws ConfigurationError
+
+// Duplicate scope names
+api.addScope('users', {});
+api.addScope('users', {});  // Throws ScopeError
+
+// Duplicate plugin names
+api.use(MyPlugin);
+api.use(MyPlugin);  // Throws PluginError
+```
+
+### Frozen Options
+
+All options objects are frozen when passed to handlers, preventing accidental or malicious modifications:
+
+```javascript
+api.customize({
+  apiMethods: {
+    test: async ({ params, options }) => {
+      // options is frozen - modifications will fail
+      options.name = 'hacked';        // TypeError: Cannot assign to read only property
+      options.newProp = 'value';       // TypeError: Cannot add property
+      delete options.version;          // TypeError: Cannot delete property
+    }
+  }
+});
+```
+
+### Symbol Property Filtering
+
+Symbols are automatically filtered when accessing scope properties to prevent symbol-based attacks:
+
+```javascript
+const sym = Symbol('hidden');
+api.scopes[sym] = 'malicious';  // Silently ignored
+
+// Only string properties are accessible through scope proxy
+console.log(api.scopes[sym]);   // undefined
+```
+
+### Best Practices
+
+1. **Always validate user input** before passing to API methods
+2. **Use the built-in validation** - don't bypass it with direct property assignment
+3. **Check error types** when catching errors to handle security issues appropriately:
+   ```javascript
+   try {
+     api.addScope(userInput, {});
+   } catch (error) {
+     if (error instanceof ValidationError) {
+       // Handle invalid input safely
+       console.error(`Invalid scope name: ${error.message}`);
+     }
+   }
+   ```
+4. **Review plugins** before installation - they have access to the full API context
+5. **Use logging** at appropriate levels to monitor for suspicious activity without exposing sensitive data
+
+
+## Logging
+
+Hooked API includes a comprehensive logging system that helps you debug API behavior and monitor performance. The logging system is integrated throughout the library and available in all handlers.
+
+### Configuring Logging
+
+When creating an API instance, you can configure logging through the options:
+
+```javascript
+import { Api, LogLevel } from './index.js';
+
+// Using numeric log level
+const api = new Api({
+  name: 'my-api',
+  version: '1.0.0',
+  logging: {
+    level: LogLevel.DEBUG,  // Using the exported enum
+    logger: console
+  }
+});
+
+// Using string log level
+const api2 = new Api({
+  name: 'my-api-2',
+  version: '1.0.0',
+  logging: {
+    level: 'debug',  // Case-insensitive string
+    logger: console
+  }
+});
+```
+
+### Log Levels
+
+The library supports five log levels, from least to most verbose:
+
+| Level | Numeric Value | String Value | Description |
+|-------|---------------|--------------|-------------|
+| ERROR | 0 | 'error' | Critical errors only |
+| WARN  | 1 | 'warn'  | Warnings and errors |
+| INFO  | 2 | 'info'  | General information (default) |
+| DEBUG | 3 | 'debug' | Detailed debugging information |
+| TRACE | 4 | 'trace' | Very detailed execution traces |
+
+You can set the log level using either:
+- **Numeric values**: 0-4 (using the exported `LogLevel` enum is recommended)
+- **String values**: 'error', 'warn', 'info', 'debug', 'trace' (case-insensitive)
+
+```javascript
+import { LogLevel } from './index.js';
+
+// All these are equivalent ways to set DEBUG level:
+logging: { level: LogLevel.DEBUG, logger: console }
+logging: { level: 3, logger: console }
+logging: { level: 'debug', logger: console }
+logging: { level: 'DEBUG', logger: console }
+```
+
+Invalid log levels will default to INFO (2), except numbers outside 0-4 which throw a ConfigurationError.
+
+### Using the Logger in Handlers
+
+Every handler receives a `log` object that provides logging methods:
+
+```javascript
+// In your DbApi implementation
+class DbApi extends Api {
+  constructor() {
+    super({ name: 'db-api', version: '1.0.0' });
+    
+    this.customize({
+      apiMethods: {
+        healthCheck: async ({ log }) => {
+          log.trace('Health check started');
+          
+          try {
+            // Check database connection
+            const result = await db.ping();
+            log.debug('Database ping successful', result);
+            log.info('Health check passed');
+            return { status: 'healthy' };
+          } catch (error) {
+            log.error('Health check failed', error);
+            throw error;
+          }
+        }
+      }
+    });
+  }
+}
+```
+
+### Logger Methods
+
+The `log` object provides these methods:
+
+```javascript
+// Inside any handler, hook, or plugin
+async function myHandler({ log, params }) {
+  log('Simple info message');           // Shorthand for log.info()
+  log.error('Error occurred', error);   // Log errors with details
+  log.warn('Deprecation warning');      // Log warnings
+  log.info('Processing request', params); // Log general information
+  log.debug('Detailed state', state);   // Log debugging details
+  log.trace('Method entry/exit');       // Log execution traces
+}
+```
+
+### Logging in Plugins
+
+Plugins can also use logging during installation and in their hooks:
+
+```javascript
+const PerformancePlugin = {
+  name: 'PerformancePlugin',
+  install: ({ addHook, log }) => {
+    log.info('Installing PerformancePlugin');
+    
+    addHook('beforeMethod', 'startTimer', {}, ({ context, log }) => {
+      context.startTime = Date.now();
+      log.trace('Timer started');
+    });
+    
+    addHook('afterMethod', 'logDuration', {}, ({ context, log }) => {
+      const duration = Date.now() - context.startTime;
+      log.debug(`Method completed in ${duration}ms`);
+      
+      if (duration > 1000) {
+        log.warn(`Slow method detected: ${duration}ms`);
+      }
+    });
+  }
+};
+```
+
+### What Gets Logged Automatically
+
+At different log levels, the library automatically logs:
+
+**INFO level**:
+- API initialization
+- Plugin installations
+- Scope additions
+
+**DEBUG level**:
+- Method calls with parameters
+- Hook executions
+- Configuration changes
+
+**TRACE level**:
+- Detailed execution flow
+- All proxy accesses
+- Internal method resolutions
+- Timing information for all operations
+
+### Performance Monitoring
+
+The library automatically tracks execution time for all operations when using DEBUG or TRACE log levels:
+
+```javascript
+// Enable timing logs
+const api = new Api({
+  name: 'my-api',
+  version: '1.0.0',
+  logging: { level: 'debug', logger: console }
+});
+
+// Example output when calling a method:
+// [DEBUG] [my-api] API method 'getData' called { params: { id: 123 } }
+// [DEBUG] [my-api] API method 'getData' completed { duration: '45ms' }
+
+// Hook execution timing:
+// [DEBUG] [my-api] Running hook 'beforeFetch' { handlerCount: 3 }
+// [DEBUG] [my-api] Hook 'beforeFetch' completed { handlersRun: 3, duration: '12ms' }
+
+// Plugin installation timing:
+// [INFO] [my-api] Installing plugin 'CachePlugin' { options: { ttl: 300 } }
+// [INFO] [my-api] Plugin 'CachePlugin' installed successfully { duration: '8ms' }
+```
+
+This timing information helps you:
+- Identify performance bottlenecks
+- Monitor method execution times
+- Track hook overhead
+- Measure plugin initialization impact
+
+For production environments, consider using a custom logger to send timing metrics to your monitoring system:
+
+```javascript
+const metricsLogger = {
+  log: (message) => {
+    // Parse timing information and send to metrics service
+    if (message.includes('duration:')) {
+      const match = message.match(/duration: '(\d+)ms'/);
+      if (match) {
+        metricsService.recordTiming(match[1]);
+      }
+    }
+  },
+  error: console.error,
+  warn: console.warn
+};
+
+const api = new Api({
+  name: 'my-api',
+  version: '1.0.0',
+  logging: { level: 'info', logger: metricsLogger }
+});
+```
+
+### Best Practices
+
+1. **Production**: Use ERROR or WARN level to minimize overhead
+2. **Development**: Use INFO or DEBUG for helpful insights
+3. **Debugging**: Use TRACE to see complete execution flow
+4. **Custom Logger**: You can provide any logger that implements the console interface:
+
+```javascript
+const customLogger = {
+  error: (...args) => myLoggingService.log('error', ...args),
+  warn: (...args) => myLoggingService.log('warn', ...args),
+  info: (...args) => myLoggingService.log('info', ...args),
+  debug: (...args) => myLoggingService.log('debug', ...args),
+  trace: (...args) => myLoggingService.log('trace', ...args),
+};
+
+const api = new Api({
+  name: 'my-api',
+  logging: { level: 'info', logger: customLogger }
+});
+```
+
+### Important Note on Configuration
+
+When providing a partial logging configuration, always include the `logger` property:
+
+```javascript
+// ✓ Correct - always include logger
+logging: { level: 'debug', logger: console }
+
+// ✗ Incorrect - missing logger can cause errors
+logging: { level: 'debug' }
+```
+
+## API Registry and Versioning
+
+Hooked API includes a global registry that tracks all API instances by name and version. This enables powerful versioning capabilities and allows different parts of your application to access specific API versions.
+
+### Creating Versioned APIs
+
+Every API instance must have a unique name and version combination:
+
+```javascript
+import { Api } from './index.js';
+
+// Create version 1.0.0
+const apiV1 = new Api({
+  name: 'user-api',
+  version: '1.0.0'
+});
+
+// Create version 2.0.0 with breaking changes
+const apiV2 = new Api({
+  name: 'user-api',
+  version: '2.0.0'
+});
+
+// Attempting to create a duplicate throws an error
+const duplicate = new Api({
+  name: 'user-api',
+  version: '1.0.0'  // Throws ConfigurationError
+});
+```
+
+### Accessing API Instances
+
+The `Api.registry` provides methods to retrieve and query registered APIs:
+
+```javascript
+// Get the latest version (highest semver)
+const latest = Api.registry.get('user-api');
+const alsoLatest = Api.registry.get('user-api', 'latest');
+
+// Get a specific version
+const v1 = Api.registry.get('user-api', '1.0.0');
+const v2 = Api.registry.get('user-api', '2.0.0');
+
+// Use semver ranges
+const compatible = Api.registry.get('user-api', '^1.0.0');  // Gets 1.x.x
+const minor = Api.registry.get('user-api', '~1.0.0');       // Gets 1.0.x
+const anyV2 = Api.registry.get('user-api', '2.x');          // Gets 2.x.x
+
+// Returns null for non-existent versions
+const missing = Api.registry.get('user-api', '3.0.0');      // null
+const invalid = Api.registry.get('user-api', 'invalid');    // null
+```
+
+### Registry Methods
+
+```javascript
+// List all registered APIs and their versions
+const registry = Api.registry.list();
+// Returns: { 'user-api': ['2.0.0', '1.0.0'], 'product-api': ['1.0.0'] }
+
+// Check if an API exists
+Api.registry.has('user-api');           // true
+Api.registry.has('user-api', '1.0.0');  // true
+Api.registry.has('user-api', '3.0.0');  // false
+
+// Get all versions of a specific API
+const versions = Api.registry.versions('user-api');
+// Returns: ['2.0.0', '1.0.0'] (sorted by semver, highest first)
+```
+
+### Version Migration Example
+
+The registry enables smooth version migrations:
+
+```javascript
+// Old code using v1
+function oldFeature() {
+  const api = Api.registry.get('user-api', '^1.0.0');
+  return api.scopes.users.list();
+}
+
+// New code using v2
+function newFeature() {
+  const api = Api.registry.get('user-api', '^2.0.0');
+  return api.scopes.users.query();  // v2 uses 'query' instead of 'list'
+}
+
+// Adapter for backward compatibility
+function adaptedFeature(version = 'latest') {
+  const api = Api.registry.get('user-api', version);
+  
+  if (api.options.version.startsWith('1.')) {
+    return api.scopes.users.list();
+  } else {
+    return api.scopes.users.query();
+  }
+}
+```
+
+### Best Practices
+
+1. **Semantic Versioning**: Follow semver conventions (major.minor.patch)
+2. **Version Documentation**: Document breaking changes between major versions
+3. **Gradual Migration**: Use the registry to run multiple versions during transitions
+4. **Version Detection**: Check `api.options.version` when behavior differs between versions
+5. **Testing**: Use `resetGlobalRegistryForTesting()` between tests to avoid conflicts
+
+```javascript
+import { resetGlobalRegistryForTesting } from './index.js';
+
+// In your test setup
+beforeEach(() => {
+  resetGlobalRegistryForTesting();
+});
+```
+
+
+
 ## Public API Surface
 
 The API instance exposes these public properties and methods:
@@ -748,6 +1362,7 @@ async ({
 - Returning `false` from a hook stops the execution of remaining hooks in the chain
 - Hooks can be global (run for all scopes) or scope-specific
 
+
 ## Plugin System
 
 ### Plugin Structure
@@ -888,49 +1503,134 @@ test('myPlugin adds expected functionality', async () => {
 });
 ```
 
+## Error Handling
+
+The library exports several error classes that it throws in different scenarios. You can catch these for specific error handling:
+
+### Error Classes
+
+All errors extend from `HookedApiError` which includes a `code` property for programmatic error handling.
+
+#### ValidationError
+Thrown when validation fails (invalid method names, scope names, parameters, etc.)
+```javascript
+try {
+  api.addScope('123-invalid-name', {});
+} catch (error) {
+  if (error instanceof ValidationError) {
+    console.log(error.code);        // 'VALIDATION_ERROR'
+    console.log(error.field);       // 'name'
+    console.log(error.value);       // '123-invalid-name'
+    console.log(error.validValues); // 'valid JavaScript identifier'
+  }
+}
+```
+
+Properties:
+- `field` - The field that failed validation
+- `value` - The invalid value provided
+- `validValues` - Description of what's expected
+
+#### PluginError
+Thrown when plugin operations fail (installation, dependencies, naming conflicts)
+```javascript
+try {
+  api.use({ name: 'api' }); // Reserved name
+} catch (error) {
+  if (error instanceof PluginError) {
+    console.log(error.code);             // 'PLUGIN_ERROR'
+    console.log(error.pluginName);       // 'api'
+    console.log(error.installedPlugins); // ['other-plugin', ...]
+  }
+}
+```
+
+Properties:
+- `pluginName` - The plugin that caused the error
+- `installedPlugins` - Array of currently installed plugins
+
+#### ConfigurationError
+Thrown when API configuration is invalid (missing name, invalid version, etc.)
+```javascript
+try {
+  const api = new Api({ version: 'invalid' });
+} catch (error) {
+  if (error instanceof ConfigurationError) {
+    console.log(error.code);     // 'CONFIGURATION_ERROR'
+    console.log(error.received); // 'invalid'
+    console.log(error.expected); // 'semver format (e.g., 1.0.0)'
+    console.log(error.example);  // "{ version: '1.0.0' }"
+  }
+}
+```
+
+Properties:
+- `received` - What was provided
+- `expected` - What was expected
+- `example` - Example of correct usage
+
+#### ScopeError
+Thrown when scope operations fail (scope not found, duplicate scope names)
+```javascript
+try {
+  await api.scopes.nonexistent.method();
+} catch (error) {
+  if (error instanceof ScopeError) {
+    console.log(error.code);            // 'SCOPE_ERROR'
+    console.log(error.scopeName);       // 'nonexistent'
+    console.log(error.availableScopes); // ['users', 'posts', ...]
+  }
+}
+```
+
+Properties:
+- `scopeName` - The scope that caused the error
+- `availableScopes` - Array of available scope names
+
+#### MethodError
+Thrown when method operations fail (conflicts, invalid calls)
+```javascript
+try {
+  api.scopes.users(); // Direct scope call
+} catch (error) {
+  if (error instanceof MethodError) {
+    console.log(error.code);       // 'METHOD_ERROR'
+    console.log(error.methodName); // 'users'
+    console.log(error.suggestion); // 'api.scopes.users.methodName()'
+  }
+}
+```
+
+Properties:
+- `methodName` - The method that caused the error
+- `suggestion` - Suggested correct usage
+
+### Importing Error Classes
+
+```javascript
+import { 
+  Api, 
+  HookedApiError,
+  ValidationError,
+  PluginError,
+  ConfigurationError,
+  ScopeError,
+  MethodError 
+} from './index.js';
+
+// Catch all library errors
+try {
+  // ... api operations
+} catch (error) {
+  if (error instanceof HookedApiError) {
+    console.log('Library error:', error.code, error.message);
+  }
+}
+```
+
 ## Undocumented Features
 
-The following features are implemented in index.js but not covered in this documentation:
-
-### 1. Error Classes and Error Handling
-- **Exported Error Classes**: `HookedApiError`, `ConfigurationError`, `ValidationError`, `PluginError`, `ScopeError`, `MethodError`
-- Each error class has specific properties (e.g., `code`, `received`, `expected`, `field`, `validValues`)
-- Error codes: 'CONFIGURATION_ERROR', 'VALIDATION_ERROR', 'PLUGIN_ERROR', 'SCOPE_ERROR', 'METHOD_ERROR'
-- Comprehensive error messages with examples and suggestions
-
-### 2. Hook Placement Options
-The `addHook` function accepts placement options that aren't documented:
-- `beforePlugin` - Insert before all hooks from a specific plugin
-- `afterPlugin` - Insert after all hooks from a specific plugin  
-- `beforeFunction` - Insert before a specific function
-- `afterFunction` - Insert after a specific function
-- Only one placement option allowed per hook
-
-### 3. Registry Version Handling
-`Api.registry.get()` supports more than just 'latest':
-- Exact versions: `Api.registry.get('my-api', '1.0.0')`
-- Semver ranges: `Api.registry.get('my-api', '^1.0.0')`
-- Returns `null` for invalid/empty version strings
-
-### 4. Security Features
-- **Prototype Pollution Protection**: Blocks dangerous properties (`__proto__`, `constructor`, `prototype`)
-- **Symbol Property Filtering**: Symbols are filtered in scope proxy access
-- **Property Conflict Detection**: Prevents overwriting existing API properties
-- **Frozen Options**: All options objects are frozen when passed to handlers
-
-### 5. LogLevel Export
-- `LogLevel` enum is exported with numeric constants:
-  ```javascript
-  import { LogLevel } from './index.js';
-  // LogLevel.ERROR = 0, LogLevel.WARN = 1, etc.
-  ```
-
-### 6. Validation Rules
-- Method and scope names must be valid JavaScript identifiers (`/^[a-zA-Z_$][a-zA-Z0-9_$]*$/`)
-- Reserved plugin names: 'api' and 'scopes' are forbidden
-- Duplicate detection for: API versions, scope names, plugin names
-
-### 7. Advanced Customize Options
+### 2. Advanced Customize Options
 The `customize()` method can accept hooks as objects with additional properties:
 ```javascript
 {
@@ -944,42 +1644,21 @@ The `customize()` method can accept hooks as objects with additional properties:
 }
 ```
 
-### 8. Direct Scope Call Error
-Attempting to call a scope directly throws a helpful error:
-```javascript
-api.scopes.users() // Throws: "Direct scope call not supported. Use api.scopes.users.methodName()"
-```
 
-### 9. Performance Logging
-- All method calls, hook executions, and plugin installations include timing information
-- Debug/trace logs show detailed execution flow with durations
-
-### 10. Scope-Specific Features
+### 5. Scope-Specific Features
 - **Scope-specific methods**: Can override global scope methods
 - **Scope-specific vars/helpers**: Merged with global ones (scope takes precedence)
 - **Scope-specific hooks**: Only run when methods are called on that scope
 
-### 11. Context Logger Methods
-The `log` object in handlers is a full logger with all methods:
-```javascript
-log('message')        // Same as log.info()
-log.error('message')
-log.warn('message')
-log.info('message')
-log.debug('message')
-log.trace('message')
-```
 
-### 12. Internal Method Access
+### 5. Internal Method Access
 When adding methods or using customize, the library logs detailed trace information about what's being added (visible at trace log level).
 
-### 13. Hook Execution Control
-Hooks can return `false` to stop the execution of remaining hooks in the chain.
 
-### 14. Empty Hook Chains
+### 6. Empty Hook Chains
 The system handles empty hook chains gracefully with trace logging.
 
-### 15. Customize During Construction
+### 7. Customize During Construction
 The constructor accepts a second parameter for immediate customization:
 ```javascript
 const api = new Api(options, {
@@ -991,23 +1670,17 @@ const api = new Api(options, {
 });
 ```
 
-### 16. Plugin Install Context Details
+### 8. Plugin Install Context Details
 - `addHook` in plugins automatically injects the plugin name
 - All add* methods in plugin context include trace logging
 - Plugin context methods are bound to maintain proper `this` context
 
-### 17. Method Name Validation
-The library provides detailed error messages for invalid method names, including:
-- Listing invalid characters
-- Suggestions for fixes
-- Examples of valid names
-
-### 18. Logging Configuration Merge Behavior
+### 9. Logging Configuration Merge Behavior
 When providing partial logging configuration, the library merges with defaults, but missing `logger` can cause issues (documented as a warning, but the full merge behavior isn't explained).
 
-### 19. Hook Handler Full Signature
+### 10. Hook Handler Full Signature
 Hook handlers in scope context receive the scope object at `handlerParams.scope`, allowing direct method calls on the current scope.
 
-### 20. API Options Access
+### 11. API Options Access
 The `api.options` property provides read access to the full configuration, including the merged logging configuration.
 

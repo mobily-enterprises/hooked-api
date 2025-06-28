@@ -1,0 +1,562 @@
+# Hooked API
+
+Hooked API allows you to create API calls that can be extended with hooks and variables.
+For example you can create a library that connects to a database, and allow users to provide hooks to maipulate the
+lifecycle of a call.
+
+Your API users will be able to define scopes and hooks to manipulate how the API calls behave.
+
+The end result would look like this:
+
+```javascript
+const api = new DbApi()
+import { db } from 'db.js'
+
+// Add MySql connector with a Plugin
+api.use(MySqlPlugin)
+
+db.addTable('books',
+  {
+    schema: {
+      title: 'string',
+      rating: 'number',
+    }
+  },
+  {
+    hooks: {
+      afterFetch: async ({ context, params })  => {
+        context.fetchedData.generatedOn = new Date()
+      }
+    }
+  }
+)
+
+db.addTable('authors',
+  {
+    schema: {
+      bookId: 'id'
+      fullName: 'string',
+    }
+  }
+)
+
+// ...
+
+api.table.books.get('10') // It will include 'generatedOn'
+api.table.authors.get('20')
+```
+
+This library provides all you need to create APIs that have the ability to be extended using plugins.
+
+The following examples will explain how the API works.
+
+
+Note: in these examples, `db` will be mocked as an object that does very little:
+
+```javascript
+// db.js
+
+export const db = {
+  use: () => {},
+  fetch: (table, id ) => {
+    if (table == 'books') return { title: "The Name of the Rose", rating: 10, id}
+    else if (table === 'authors') return { make: "Umberto Eco", id, bookId: 100}
+  }
+}
+```
+
+## First steps: declare a simple function
+
+Here's the simplest way to create an API with a single method:
+
+```javascript
+import { Api } from 'hooked-api';
+import { db } from 'db.js'
+
+const api = new Api({
+  name: 'dbConnect',
+  version: '1.0.0',
+  databaseName: 'company_db'
+}, {
+  apiMethods: {
+    getUser: async ({ params }) => { 
+      db.use(apiOptions.databaseName)   
+      const response = await db.fetch('users', params.id)
+      return response.json();
+    }
+  }
+});
+```
+
+Anything defined in `apiMethods` will be automatically available as an API method:
+
+To use this API, you simply call the `getUser()` method:
+
+```javascript
+const user = await api.getUser({ id: 100 });
+```
+
+Of course, you could do this by just plain Javascript:
+
+```javascript
+import { db } from 'db.js'
+const databaseName = 'company_db'
+const api = {}
+
+api.getUser: async (params) => {
+  db.use(databaseName) 
+  const response = await db.fetch('users', params.id)
+  return response.json();
+}
+```
+
+But you would miss out on all of the magic that this library offers (hooks, helpers, variables, plugins, scopes...)
+
+## API features: Helpers and variables
+
+You can set helpers function and variables within the API:
+
+```javascript
+import { Api } from 'hooked-api'
+import { db } from 'db.js'
+
+const api = new Api({
+  name: 'dbConnect',
+  version: '1.0.0',
+  databaseName: 'company_db'
+}, {
+  apiMethods: {
+    getUser: async ({ params, helpers }) => { 
+      db.use(apiOptions.databaseName)   
+      const response = await db.fetch('users', params.id, { timeout: vars.timeout})
+      data = response.json();
+      data.generatedOn = helpers.makeGeneratedOn()
+      return data
+    }
+  },
+  vars: {
+    timeout: 10000
+  },
+  helpers: {
+    makeGeneratedOn: () => new Date()
+  }
+});
+
+// Usage is identical
+const user = await api.getUser({ id: 100 });
+```
+
+As you can see, you can create variables (`vars`) and helpers (`helpers`) when you create the API, and you are able to
+use those in the functions defined in `apiMethods`.
+
+## More API features: hooks
+
+API methods can be made more configurable by adding hooks. Hooks allow you to intercept and modify behavior at specific points in your method execution. The `context` object is used to maintain state between hooks, allowing them to share data throughout the method's lifecycle.
+
+Here is an example of how to improve this library providing hooks:
+
+```javascript
+import { Api } from 'hooked-api';
+import { db } from 'db.js'
+
+const api = new Api({
+  name: 'dbConnect',
+  version: '1.0.0',
+  databaseName: 'company_db'
+}, {
+  apiMethods: {
+    getUser: async ({ context, params, helpers }) => { 
+      db.use(apiOptions.databaseName)
+      
+      // Run the before-fetch hooks
+      await runHooks('beforeFetch', context);
+ 
+      // Fetch the data
+      const response = await db.fetch('users', params.id, { timeout: vars.timeout})
+      context.record = response.json();
+
+      // Run the after-fetch hooks
+      await runHooks('afterFetch', context);
+ 
+      return context.record
+    }
+  },
+  vars: {
+    timeout: 10000
+  },
+  helpers: {
+    makeGeneratedOn: () => new Date()
+  },
+  hooks: {
+    afterFetch: ({context, helpers}) => {
+      context.record.generatedOn = helpers.makeGeneratedOn()
+    }
+  }
+});
+```
+
+Here, the data manipulation was delegated to a hook, whoch added the random field to the returned data.
+
+## Scopes: Organizing Different Types of Data
+
+In many cases it's crucial to have `scopes`; in this case, we will map a scope to a database table:
+
+```javascript
+import { Api } from 'hooked-api'
+import { db } from 'db.js'
+
+const api = new Api({
+  name: 'dbConnect',
+  version: '1.0.0',
+  databaseName: 'company_db'
+}, {
+  // Note that we are now definint scope methods...
+  scopeMethods: {
+    get: async ({ context, scopeOptions, params, helpers, scopeName }) => { 
+      db.use(apiOptions.databaseName)
+      
+
+
+      // Run the before-fetch hooks
+      await runHooks('beforeFetch', context);
+ 
+      // Fetch the data. The table used will depend on the scope name
+      const response = await db.fetch(scopeName, params.id, { timeout: vars.timeout})
+      context.record = response.json();
+
+      // Run the after-fetch hooks
+      await runHooks('afterFetch', context);
+ 
+      return context.record
+    }
+  },
+  vars: {
+    timeout: 10000
+  },
+  helpers: {
+    makeGeneratedOn: () => new Date()
+  },
+  hooks: {
+    // No matter what table is fetched, every record will have this timestamp
+    afterFetch: ({context, helpers}) => {
+      context.record.generatedOn = helpers.makeGeneratedOn()
+    }
+  }
+});
+```
+
+Since we defined `scopeMethods` instead of `apiMethods`, those methods will only be available to defined scopes.
+To define a scope:
+
+```javascript
+api.addScope('books',
+  {
+    schema: {
+      title: 'string',
+      rating: 'number',
+    },
+  },
+  {
+    hooks:
+      afterFetch: ({context}) => {
+        context.record.titleAndRating = context.record.title + ' ' + context.record.rating
+      }
+  }
+)
+
+api.addScope('authors',
+  {
+    schema: {
+      fullName: 'string',
+      bookId: 'id'
+    },
+  }
+)
+```
+The first parameter is the scope's name (`books` or `authors`); the second parameter is the scope's options. In
+this case, we defined `schema` (which at this point is not used in the current implementation).
+Both scopes will return records with `generatedOn` set to the current data, but only `books` will have 
+`titleAndRating` since the hook is limited to the `books` scope. 
+
+To use it:
+
+```javascript
+const author = await api.scopes.authors.get(10);
+/* Returns:
+  { 
+    id: 10,
+    name: "Umberto Eco",
+    generatedOn: 2025-06-28T01:35:40.971Z,
+  } 
+*/
+
+const book = await api.scopes.books.get(20);
+/* Returns: 
+  { 
+    id: 1,
+    title: "The Name of the Rose",
+    rating: 10,
+    titleAndRating: "The Name Of The Rose 10",
+    generatedOn: 2025-06-28T01:35:40.971Z,
+  } 
+*/
+```
+
+Notice how:
+- The `get` method is defined once in `scopeMethods` and works the same for all scopes
+- The `books` scope uses **hooks** to customize the record. 
+- Each scope returns completely different data structures despite using the same method
+
+## Scope Aliases
+
+You can create custom aliases for the `scope` property to make your API more domain-specific:
+
+```javascript
+import { Api } from 'hooked-api';
+
+// Define scopeMethods once - they're the same for all scopes
+const weatherApi = new Api({...})
+
+// (...)
+
+// Create an alias "table" that points to "scopes"
+dbApi.setScopeAlias('tables');
+
+// You can use "info" instead of "scopes"
+const author = await api.tables.authors.get(10);
+```
+
+## Plugins
+
+Plugins are what make this library actually useful and demonstrate its true extensibility. They allow you to bundle reusable functionalities (API methods, scope methods, hooks, vars, helpers, and even new scopes) into self-contained modules that can be easily added to any Api instance. This promotes code reuse, separation of concerns, and simplifies the development of complex API behaviors.
+
+Imagine you want to add a logging mechanism, authentication features, or a specialized data transformation pipeline that can be applied across different API instances without rewriting the code. That's where plugins shine.
+
+This is the weather code seen above, turned into a plugin.
+
+```Javascript
+// weatherCorePlugin.js
+const DatabasePlugin = {
+  name: 'dbConnect',
+  
+  dependencies: [], // This plugin stands alone
+  
+  install: ({ addScopeMethod, addScope, vars, helpers, name: pluginName, apiOptions }) => {
+  
+    addScopeMethod('get', async ({ params, apiOptions, vars, scope, helpers, context, runHooks, scopeOptions }) => {
+      // Initialize headers as an object (not array - headers are key-value pairs)
+      context.headers = {};
+
+      if (!scope.validate()) {
+        throw new Error('Validation error')
+      }
+
+      // Run the before-fetch hook which can add headers
+      await runHooks('before-fetch', context);
+
+      // Actually make the request; the URL will depend on the scope
+      context.response = await fetch(`${apiOptions.baseUrl}/${scopeOptions.endpoint}/${params.city}`, { 
+        headers: context.headers,
+        timeout: vars.timeout
+      });
+      context.data = await context.response.json();
+
+      // Format for display using scope-specific hooks
+      await runHooks('format-response', context);
+      
+      return context.formattedData;
+    });
+
+
+    addScopeMethod('validate', async ({ params, apiOptions, vars, helpers }) => {
+      return true
+    })
+
+    // Vars and helpers
+    vars.timeout = 10000
+    helpers.formatTimestamp = (date) => date.toLocaleString('en-US', {  timeZone: 'UTC', hour12: false  })
+  },
+};
+
+
+
+export default weatherCorePlugin;
+```
+
+## Making a pre-hooked Api class
+
+Most of the time (in fact, probably all of the time) you will want to distibute a ready-to-go class with a
+plugin pre-packaged in it.
+Here is what you do:
+
+```Javascript
+// ExtendedApi.js
+import 'weatherCorePlugin' from './weatherCorePlugin.js' 
+import { Api } from './Api.js'; // Adjust the path to your Api class
+
+class ExtendedApi extends Api {
+
+  constructor(apiOptions = {}, customizeOptions = {}) {
+    
+    // This will add the API to the registry
+    super(apiOptions);
+
+    // Use the core plugin by default
+    this.use(weatherCorePlugin)
+
+    // NOW, after setting all of the defaults, apply user-provided customizeOptions.
+    // These will override any default customizations if keys conflict,
+    this.customize(customizeOptions);
+  }
+}
+
+export default ExtendedApi;
+```
+
+To use it:
+
+```Javascript
+import ExtendedApi from './ExtendedApi,js'
+
+const api = new ExtendedApi({
+  name: 'api',
+  version: '1.0.0',
+  baseUrl: 'https://example.com/'
+})
+
+
+```
+
+## Public API Surface
+
+The API instance exposes only these public properties and methods:
+
+- `api.use(plugin, options)` - Install plugins
+- `api.customize(config)` - Add hooks, methods, vars, and helpers
+- `api.addScope(name, options, extras)` - Add scopes with configuration
+- `api.setScopeAlias(name)` - Create an alias for the scopes property
+- `api.scopes` - Access to defined scopes (e.g., `api.scopes.users.get()`)
+- `api.[aliasName]` - If setScopeAlias was called (e.g., `api.tables` for database APIs)
+- `api.methodName()` - Direct calls to defined API methods
+
+
+## Basic API Creation
+
+### Handler Context Full Structure
+
+#### Global API Methods
+```javascript
+// Handler signature for global API methods:
+({ 
+  params,         // Parameters passed to the method call
+  context,        // Mutable object for passing data between hooks
+  vars,           // Variables proxy
+  helpers,        // Helpers proxy
+  scope,          // null (no current scope for global methods)
+  scopes,         // Access to all scopes (api.scopes)
+  runHooks,       // Function to run hooks
+  name,           // The method name ('method' in this case)
+  apiOptions,     // Frozen API configuration
+  pluginOptions,  // Frozen plugin configurations
+  // If setScopeAlias was called:
+  [aliasName]     // Same as 'scopes' but with custom name (e.g., 'tables')
+}) => {
+  // Global methods receive scopes proxy but no current scope
+});
+```
+
+#### Scope Methods
+```javascript
+// Handler signature for scope methods:
+({ 
+  params,          // Parameters passed to the method call
+  context,         // Mutable object for passing data between hooks
+  vars,            // Variables proxy (merged with scope vars)
+  helpers,         // Helpers proxy (merged with scope helpers)
+  scope,           // Current scope object (e.g., api.scopes.users when in 'users' scope)
+  scopes,          // All scopes proxy (api.scopes)
+  runHooks,        // Function to run hooks
+  name,            // The method name ('method' in this case)
+  apiOptions,      // Frozen API configuration
+  pluginOptions,   // Frozen plugin configurations
+  scopeOptions,    // Frozen scope-specific options
+  scopeName,       // Current scope name as string
+  // If setScopeAlias was called:
+  [aliasName]      // Same as 'scopes' but with custom name (e.g., 'tables')
+}) => {
+  // Scope methods can call other methods on the current scope directly:
+  // await scope.validate(params)
+});
+
+// Example with alias:
+api.setScopeAlias('table');
+// Now handlers also receive 'table' parameter:
+({ params, scope, scopes, scopeName, table }) => {
+  // scope = current scope object (e.g., api.scopes.users)
+  // scopes = all scopes proxy (api.scopes) 
+  // table = same as scopes (alias for api.scopes)
+  
+  // Clean syntax:
+  await scope.validate(params);  // Validate current scope
+  await table.orders.get({ userId: params.id });  // Access other scopes via alias
+}
+```
+
+#### Hook Handlers
+```javascript
+// Hook handler signature (when added via plugin or customize):
+({ 
+  params,          // Empty object for hooks
+  context,         // The context object passed to runHooks
+  vars,            // Variables (scope-aware if hook run with scope)
+  helpers,         // Helpers (scope-aware if hook run with scope)
+  scope,           // Current scope object if hook run in scope context, null otherwise
+  scopes,          // All scopes proxy (api.scopes)
+  runHooks,        // Function to run hooks (careful of recursion!)
+  name,            // Hook name
+  apiOptions,      // Frozen API configuration
+  pluginOptions,   // Frozen plugin configurations
+  scopeOptions,    // Frozen scope options (only if hook run with scope)
+  scopeName,       // Scope name or null
+  // If setScopeAlias was called:
+  [aliasName]      // Same as 'scopes' but with custom name
+}) => {
+  // Hook handler implementation
+});
+```
+
+### Plugin Install Context
+```javascript
+const myPlugin = {
+  name: 'myPlugin',
+  install: ({
+    addApiMethod,       // Add global API methods
+    addScopeMethod,     // Define scope methods
+    addScope,           // Add scopes
+    setScopeAlias,      // Create scope alias
+    addHook,            // Add hooks (with plugin name auto-injected)
+    runHooks,           // Run hooks
+    vars,               // Variables proxy
+    helpers,            // Helpers proxy
+    scope,              // Access to scopes
+    name,               // Plugin name
+    apiOptions,         // Frozen API configuration
+    pluginOptions,      // Frozen plugin configurations
+    context             // Empty context object
+  }) => {
+    // Plugin installation logic
+  }
+};
+```
+
+### Testing Utility
+
+```javascript
+import { resetGlobalRegistryForTesting } from 'hooked-api';
+
+// In tests, clear all registered APIs
+beforeEach(() => {
+  resetGlobalRegistryForTesting();
+});
+```
+

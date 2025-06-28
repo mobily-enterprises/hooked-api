@@ -100,7 +100,9 @@ import { db } from './db.js'
 const api = new Api({
   name: 'library-api',
   version: '1.0.0',
-}, {
+});
+
+api.customize({
   apiMethods: {
     getAuthor: async ({ params }) => { 
       const response = await db.fetch('authors', params.id, {})
@@ -143,7 +145,9 @@ import { db } from './db.js'
 const api = new Api({
   name: 'library-api',
   version: '1.0.0',
-}, {
+});
+
+api.customize({
   apiMethods: {
     getAuthor: async ({ params, helpers, vars }) => { 
       const response = await db.fetch('authors', params.id, { timeout: vars.timeout })
@@ -180,7 +184,9 @@ import { db } from './db.js'
 const api = new Api({
   name: 'library-api',
   version: '1.0.0',
-}, {
+});
+
+api.customize({
   apiMethods: {
     getAuthor: async ({ context, params, helpers, vars, runHooks }) => {       
 
@@ -225,7 +231,9 @@ import { db } from './db.js'
 const api = new Api({
   name: 'library-api',
   version: '1.0.0',
-}, {
+});
+
+api.customize({
   // Note that we are now defining scope methods...
   scopeMethods: {
     get: async ({ context, scopeOptions, params, helpers, vars, scopeName, runHooks }) => { 
@@ -412,17 +420,13 @@ import { Api } from 'hooked-api'; // Adjust the path to your Api class
 
 class DbApi extends Api {
 
-  constructor(apiOptions = {}, customizeOptions = {}) {
+  constructor(apiOptions = {}) {
     
     // This will add the API to the registry
     super(apiOptions);
 
     // Use the core plugin by default
     this.use(DatabasePlugin)
-
-    // NOW, after setting all of the defaults, apply user-provided customizeOptions.
-    // These will override any default customizations if keys conflict,
-    this.customize(customizeOptions);
   }
 }
 
@@ -479,14 +483,12 @@ import { LoggingPlugin } from './LoggingPlugin.js'
 import { Api } from './index.js';
 
 class DbApi extends Api {
-  constructor(apiOptions = {}, customizeOptions = {}) {
-    super(apiOptions, customizeOptions);
+  constructor(apiOptions = {}) {
+    super(apiOptions);
 
     // Use the core plugins
     this.use(DatabasePlugin);
     this.use(LoggingPlugin);  // Logging added to base API
-    
-    this.customize(customizeOptions);
   }
 }
 
@@ -1658,10 +1660,12 @@ When adding methods or using customize, the library logs detailed trace informat
 ### 6. Empty Hook Chains
 The system handles empty hook chains gracefully with trace logging.
 
-### 7. Customize During Construction
-The constructor accepts a second parameter for immediate customization:
+### 7. Customize After Construction
+Use the customize() method to add functionality after creating the API instance:
 ```javascript
-const api = new Api(options, {
+const api = new Api(options);
+
+api.customize({
   apiMethods: {},
   scopeMethods: {},
   hooks: {},

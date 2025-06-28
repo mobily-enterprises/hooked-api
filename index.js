@@ -104,7 +104,7 @@ export class MethodError extends HookedApiError {
 }
 
 export class Api {
-  constructor(options = {}, customizeOptions = {}) {
+  constructor(options = {}) {
     // Default logging configuration
     const defaultLogging = {
       level: 'info',
@@ -165,11 +165,32 @@ export class Api {
     this._pluginOptions = {} // Mutable object for plugin options
     this._scopeAlias = null // Track the scope alias if set
     this._addScopeAlias = null // Track the addScope alias if set
-    
+   
     // Initialize logger
-    this._logLevel = typeof this.options.logging.level === 'string' ? 
-      LOG_LEVEL_VALUES[this.options.logging.level.toLowerCase()] || LogLevel.INFO : 
-      this.options.logging.level
+    let logLevel;
+    if (typeof this.options.logging.level === 'string') {
+      logLevel = LOG_LEVEL_VALUES[this.options.logging.level.toLowerCase()];
+      if (logLevel === undefined) {
+        logLevel = LogLevel.INFO;
+      }
+    } else if (typeof this.options.logging.level === 'number') {
+      // Validate numeric log level is in valid range
+      if (this.options.logging.level >= 0 && this.options.logging.level <= 4) {
+        logLevel = this.options.logging.level;
+      } else {
+        throw new ConfigurationError(
+          `Log level must be between 0 (ERROR) and 4 (TRACE). Received: ${this.options.logging.level}`,
+          {
+            received: this.options.logging.level,
+            expected: '0-4 or error/warn/info/debug/trace',
+            example: "{ logging: { level: 'debug' } }"
+          }
+        );
+      }
+    } else {
+      logLevel = LogLevel.INFO;
+    }
+    this._logLevel = logLevel;
     this._logger = this._createLogger()
     
     // Create proxy objects for vars and helpers (only for internal use)
@@ -295,10 +316,8 @@ export class Api {
     this._register()
     
     // Keep use, customize, and addScope as public methods
-    this.use = this.use.bind(this);
-    this.customize = this.customize.bind(this);
-    this.addScope = this._addScope.bind(this);
-    this.setScopeAlias = this._setScopeAlias.bind(this);
+    this.addScope = this._addScope;
+    this.setScopeAlias = this._setScopeAlias;
     
     // Create the proxy first
     const proxy = new Proxy(this, {
@@ -362,12 +381,14 @@ export class Api {
       }
     });
     
+    /*
     // Apply customize options if provided
     const { hooks, apiMethods, scopeMethods, vars, helpers } = customizeOptions;
     if (hooks || apiMethods || scopeMethods || vars || helpers) {
       proxy.customize(customizeOptions);
     }
-    
+    */
+
     return proxy;
   }
   
@@ -377,9 +398,10 @@ export class Api {
     const customLogger = loggingOpts.logger;
     
     const log = (level, message, data, context) => {
-      // Check if this log level is enabled
-      if (level < this._logLevel) return;
+      // Check if this log level is enabled FIRST, before any work
+      if (level > this._logLevel) return;
       
+      // Lazy evaluation - only compute these if we're actually logging
       const levelName = LOG_LEVEL_NAMES[level];
       const timestamp = loggingOpts.timestamp ? new Date().toISOString() : '';
       
@@ -446,7 +468,7 @@ export class Api {
     const effectiveLogLevel = scopeLogLevel !== null ? scopeLogLevel : this._logLevel;
     
     const log = (level, msg, data) => {
-      if (level < effectiveLogLevel) return;
+      if (level > effectiveLogLevel) return;
       this._logger[LOG_LEVEL_NAMES[level].toLowerCase()](msg, data, contextName);
     };
     
@@ -666,6 +688,10 @@ export class Api {
     const varsProxy = new Proxy({}, {
       get: (target, prop) => mergedVars.get(prop),
       set: (target, prop, value) => {
+        // Prevent prototype pollution
+        if (isDangerousProp(prop)) {
+          return false;
+        }
         mergedVars.set(prop, value);
         return true;
       }
@@ -679,6 +705,10 @@ export class Api {
     const helpersProxy = new Proxy({}, {
       get: (target, prop) => mergedHelpers.get(prop),
       set: (target, prop, value) => {
+        // Prevent prototype pollution
+        if (isDangerousProp(prop)) {
+          return false;
+        }
         mergedHelpers.set(prop, value);
         return true;
       }

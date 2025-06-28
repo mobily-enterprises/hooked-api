@@ -199,7 +199,7 @@ export class Api {
       set: (target, prop, value) => {
         // Prevent prototype pollution
         if (isDangerousProp(prop)) {
-          return false;
+          return true; // Silently ignore but return true to prevent TypeError
         }
         this._vars.set(prop, value);
         return true;
@@ -210,7 +210,7 @@ export class Api {
       set: (target, prop, value) => {
         // Prevent prototype pollution
         if (isDangerousProp(prop)) {
-          return false;
+          return true; // Silently ignore but return true to prevent TypeError
         }
         this._helpers.set(prop, value);
         return true;
@@ -690,7 +690,7 @@ export class Api {
       set: (target, prop, value) => {
         // Prevent prototype pollution
         if (isDangerousProp(prop)) {
-          return false;
+          return true; // Silently ignore but return true to prevent TypeError
         }
         mergedVars.set(prop, value);
         return true;
@@ -707,7 +707,7 @@ export class Api {
       set: (target, prop, value) => {
         // Prevent prototype pollution
         if (isDangerousProp(prop)) {
-          return false;
+          return true; // Silently ignore but return true to prevent TypeError
         }
         mergedHelpers.set(prop, value);
         return true;

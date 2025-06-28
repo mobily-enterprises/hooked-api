@@ -106,8 +106,7 @@ export class Api {
                   scopes: scopeContext.scopes,            // All scopes proxy
                   
                   // Capabilities
-                  runHooks: (name) => scopeContext.runHooks(name, context),
-                  api: this,  // API instance reference
+                  runHooks: (name) => scopeContext.runHooks(name, context, params),
                   
                   // Metadata
                   name: prop,
@@ -167,8 +166,7 @@ export class Api {
               scopes: target.scopes,  // All scopes proxy
               
               // Capabilities
-              runHooks: (name) => target._runHooks(name, context),
-              api: receiver,  // API instance reference (use receiver to get the proxy)
+              runHooks: (name) => target._runHooks(name, context, params),
               
               // Metadata
               name: prop,
@@ -259,10 +257,6 @@ export class Api {
       return null;
     },
 
-    find(apiName, version = 'latest') {
-      return this.get(apiName, version);
-    },
-
     list() {
       const registry = {}
       for (const [apiName, versionsMap] of globalRegistry) {
@@ -290,13 +284,6 @@ export class Api {
     }
     if (!pluginName?.trim()) throw new Error(`Hook '${hookName}' requires a valid pluginName`)
     if (!functionName?.trim()) throw new Error(`Hook '${hookName}' requires a valid functionName`)
-    
-    // Allow handler to be the 4th parameter (with hookAddOptions) or 3rd parameter (without)
-    if (typeof hookAddOptions === 'function' && handler === undefined) {
-      handler = hookAddOptions;
-      hookAddOptions = {};
-    }
-    
     if (typeof handler !== 'function') throw new Error(`Hook '${hookName}' handler must be a function`)
 
     const placements = [hookAddOptions.beforePlugin, hookAddOptions.afterPlugin, hookAddOptions.beforeFunction, hookAddOptions.afterFunction].filter(Boolean);
@@ -338,8 +325,7 @@ export class Api {
     }
 
     if (index === -1) {
-      // Warn about missing placement target and add to end
-      console.warn(`Hook '${hookName}' placement target not found. Adding to end of hook list.`)
+      // Placement target not found - add to end
       handlers.push(entry)
     } else {
       handlers.splice(index, 0, entry)
@@ -386,7 +372,7 @@ export class Api {
       vars: varsProxy,
       helpers: helpersProxy,
       scopes: this.scopes,
-      runHooks: (name, context) => this._runHooks(name, context, scopeName),
+      runHooks: (name, context, params) => this._runHooks(name, context, params, scopeName),
       apiOptions: Object.freeze({ ...this._apiOptions }),
       pluginOptions: Object.freeze({ ...this._pluginOptions }),
       scopeOptions: scopeConfig.options
@@ -405,7 +391,7 @@ export class Api {
     };
   }
 
-  async _runHooks(name, context, scopeName = null) {
+  async _runHooks(name, context, params = {}, scopeName = null) {
     const handlers = this._hooks.get(name) || []
     const handlerContext = scopeName ? this._buildScopeContext(scopeName) : this._buildGlobalContext();
     
@@ -415,7 +401,7 @@ export class Api {
         // Flatten the handler parameters
         const handlerParams = { 
           // User data
-          params: {},
+          methodParams: params,
           context,
           
           // Data access
@@ -426,7 +412,6 @@ export class Api {
           
           // Capabilities
           runHooks: handlerContext.runHooks,
-          api: this,  // API instance reference
           
           // Metadata
           name,
@@ -443,7 +428,7 @@ export class Api {
         
         const result = await handler(handlerParams);
         if (result === false) {
-          console.log(`Hook '${name}' handler from plugin '${pluginName}' (function: '${functionName}') stopped the chain.`)
+          // Hook returned false - stop the chain
           break
         }
       }
@@ -586,7 +571,7 @@ export class Api {
     // Store scope configuration with underscore prefix for internal properties
     this._scopes.set(name, {
       options: Object.freeze({ ...options }),
-      _apiMethods: new Map(Object.entries(apiMethods)), // Deprecated - for backward compatibility
+      _apiMethods: new Map(Object.entries(apiMethods)),
       _scopeMethods: new Map(Object.entries(scopeMethods)),
       _vars: new Map(Object.entries(vars)),
       _helpers: new Map(Object.entries(helpers))
@@ -672,11 +657,7 @@ export class Api {
         
         // Special addHook that injects plugin name
         addHook: (hookName, functionName, hookAddOptions, handler) => {
-          if (typeof hookAddOptions === 'function' && handler === undefined) {
-            handler = hookAddOptions;
-            hookAddOptions = {};
-          }
-          return this._addHook(hookName, plugin.name, functionName, hookAddOptions, handler);
+          return this._addHook(hookName, plugin.name, functionName, hookAddOptions || {}, handler);
         },
         
         // Data access
@@ -694,8 +675,7 @@ export class Api {
       plugin.install(installContext)
       this._installedPlugins.add(plugin.name)
     } catch (error) {
-      console.error(`Error installing plugin '${plugin.name}' on API '${this.options.name}':`, error)
-      throw new Error(`Failed to install plugin '${plugin.name}': ${error.message}`)
+      throw new Error(`Failed to install plugin '${plugin.name}': ${error.message}`, { cause: error })
     }
     return this
   }

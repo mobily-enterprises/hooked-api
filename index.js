@@ -5,6 +5,58 @@ const VALID_JS_IDENTIFIER = /^[a-zA-Z_$][a-zA-Z0-9_$]*$/
 const DANGEROUS_PROPS = ['__proto__', 'constructor', 'prototype']
 const isDangerousProp = (prop) => DANGEROUS_PROPS.includes(prop)
 
+// Custom error classes for better error categorization
+export class HookedApiError extends Error {
+  constructor(message, code = 'HOOKED_API_ERROR') {
+    super(message);
+    this.name = this.constructor.name;
+    this.code = code;
+    Error.captureStackTrace(this, this.constructor);
+  }
+}
+
+export class ConfigurationError extends HookedApiError {
+  constructor(message, { received, expected, example } = {}) {
+    super(message, 'CONFIGURATION_ERROR');
+    this.received = received;
+    this.expected = expected;
+    this.example = example;
+  }
+}
+
+export class ValidationError extends HookedApiError {
+  constructor(message, { field, value, validValues } = {}) {
+    super(message, 'VALIDATION_ERROR');
+    this.field = field;
+    this.value = value;
+    this.validValues = validValues;
+  }
+}
+
+export class PluginError extends HookedApiError {
+  constructor(message, { pluginName, installedPlugins } = {}) {
+    super(message, 'PLUGIN_ERROR');
+    this.pluginName = pluginName;
+    this.installedPlugins = installedPlugins;
+  }
+}
+
+export class ScopeError extends HookedApiError {
+  constructor(message, { scopeName, availableScopes } = {}) {
+    super(message, 'SCOPE_ERROR');
+    this.scopeName = scopeName;
+    this.availableScopes = availableScopes;
+  }
+}
+
+export class MethodError extends HookedApiError {
+  constructor(message, { methodName, suggestion } = {}) {
+    super(message, 'METHOD_ERROR');
+    this.methodName = methodName;
+    this.suggestion = suggestion;
+  }
+}
+
 export class Api {
   constructor(options = {}, customizeOptions = {}) {
     this.options = {
@@ -14,10 +66,32 @@ export class Api {
     }
 
     if (typeof this.options.name !== 'string' || this.options.name.trim() === '') {
-      throw new Error('API instance must have a non-empty "name" property.');
+      const received = this.options.name === undefined ? 'undefined' : 
+                      this.options.name === null ? 'null' : 
+                      this.options.name === '' ? 'empty string' :
+                      `${typeof this.options.name} "${this.options.name}"`;
+      throw new ConfigurationError(
+        `API instance must have a non-empty name property. Received: ${received}. Example: new Api({ name: 'my-api', version: '1.0.0' })`,
+        { 
+          received: this.options.name,
+          expected: 'non-empty string',
+          example: "new Api({ name: 'my-api', version: '1.0.0' })"
+        }
+      );
     }
     if (!semver.valid(this.options.version)) {
-      throw new Error(`Invalid version format '${this.options.version}' for API '${this.options.name}'.`);
+      const versionType = typeof this.options.version;
+      const suggestion = versionType === 'string' ? 
+        `Did you mean '${this.options.version}.0' or '${this.options.version}.0.0'?` :
+        `Version must be a string in semver format (e.g., '1.0.0', '2.1.3').`;
+      throw new ConfigurationError(
+        `Invalid version format for API '${this.options.name}'. Received: ${versionType === 'string' ? `'${this.options.version}'` : versionType}. ${suggestion}`,
+        {
+          received: this.options.version,
+          expected: 'semver format (e.g., 1.0.0)',
+          example: "{ version: '1.0.0' }"
+        }
+      );
     }
 
     // All internal state with underscore prefix
@@ -70,7 +144,13 @@ export class Api {
         
         // Return another proxy for the methods
         return new Proxy((...args) => {
-          throw new Error(`Direct scope call not supported. Use api.scopes.${scopeName}.methodName() instead`);
+          throw new MethodError(
+            `Direct scope call not supported. Use api.scopes.${scopeName}.methodName() instead`,
+            {
+              methodName: scopeName,
+              suggestion: `api.scopes.${scopeName}.methodName()`
+            }
+          );
         }, {
           get: (target, prop) => {
             // Only non-numeric string props, so that scope.users[123] returns undefined
@@ -204,7 +284,15 @@ export class Api {
     }
 
     if (globalRegistry.get(name).has(version)) {
-      throw new Error(`API '${name}' version '${version}' is already registered.`);
+      const existingVersions = Array.from(globalRegistry.get(name).keys()).sort(semver.rcompare);
+      throw new ConfigurationError(
+        `API '${name}' version '${version}' is already registered. Existing versions: ${existingVersions.join(', ')}. Use a different version number or get the existing instance with Api.registry.get('${name}', '${version}').`,
+        {
+          received: version,
+          expected: 'unique version number',
+          example: `Api.registry.get('${name}', '${version}')`
+        }
+      );
     }
 
     globalRegistry.get(name).set(version, this)
@@ -278,13 +366,54 @@ export class Api {
   }
 
   _addHook(hookName, pluginName, functionName, hookAddOptions, handler) {
-    if (!pluginName?.trim()) throw new Error(`Hook '${hookName}' requires a valid pluginName`)
-    if (!functionName?.trim()) throw new Error(`Hook '${hookName}' requires a valid functionName`)
-    if (typeof handler !== 'function') throw new Error(`Hook '${hookName}' handler must be a function`)
+    if (!pluginName?.trim()) {
+      const received = pluginName === undefined ? 'undefined' : pluginName === null ? 'null' : `empty string "${pluginName}"`;
+      throw new ValidationError(
+        `Hook '${hookName}' requires a valid plugin name. Received: ${received}. Plugin name must be a non-empty string.`,
+        {
+          field: 'pluginName',
+          value: pluginName,
+          validValues: 'non-empty string'
+        }
+      );
+    }
+    if (!functionName?.trim()) {
+      const received = functionName === undefined ? 'undefined' : functionName === null ? 'null' : `empty string "${functionName}"`;
+      throw new ValidationError(
+        `Hook '${hookName}' requires a valid function name. Received: ${received}. Function name must be a non-empty string.`,
+        {
+          field: 'functionName',
+          value: functionName,
+          validValues: 'non-empty string'
+        }
+      );
+    }
+    if (typeof handler !== 'function') {
+      throw new ValidationError(
+        `Hook '${hookName}' handler must be a function. Received: ${typeof handler}. Example: addHook('hookName', 'pluginName', 'functionName', {}, async (context) => { /* handler code */ })`,
+        {
+          field: 'handler',
+          value: handler,
+          validValues: 'function'
+        }
+      );
+    }
 
     const placements = [hookAddOptions.beforePlugin, hookAddOptions.afterPlugin, hookAddOptions.beforeFunction, hookAddOptions.afterFunction].filter(Boolean);
     if (placements.length > 1) {
-      throw new Error(`Hook '${hookName}' can only specify one placement parameter`)
+      const specified = [];
+      if (hookAddOptions.beforePlugin) specified.push(`beforePlugin: '${hookAddOptions.beforePlugin}'`);
+      if (hookAddOptions.afterPlugin) specified.push(`afterPlugin: '${hookAddOptions.afterPlugin}'`);
+      if (hookAddOptions.beforeFunction) specified.push(`beforeFunction: '${hookAddOptions.beforeFunction}'`);
+      if (hookAddOptions.afterFunction) specified.push(`afterFunction: '${hookAddOptions.afterFunction}'`);
+      throw new ValidationError(
+        `Hook '${hookName}' can only specify one placement parameter, but got ${placements.length}: ${specified.join(', ')}. Use only one of: beforePlugin, afterPlugin, beforeFunction, or afterFunction.`,
+        {
+          field: 'placement',
+          value: specified,
+          validValues: ['beforePlugin', 'afterPlugin', 'beforeFunction', 'afterFunction']
+        }
+      );
     }
 
     if (!this._hooks.has(hookName)) {
@@ -332,7 +461,17 @@ export class Api {
   _buildScopeContext(scopeName) {
     const scopeConfig = this._scopes.get(scopeName);
     if (!scopeConfig) {
-      throw new Error(`Scope '${scopeName}' not found`);
+      const availableScopes = Array.from(this._scopes.keys());
+      const suggestion = availableScopes.length > 0 ? 
+        `Available scopes: ${availableScopes.join(', ')}` : 
+        'No scopes have been defined. Use api.addScope(name, options) to create a scope first.';
+      throw new ScopeError(
+        `Scope '${scopeName}' not found. ${suggestion}`,
+        {
+          scopeName,
+          availableScopes
+        }
+      );
     }
     
     // Merge vars: scope vars take precedence
@@ -432,18 +571,57 @@ export class Api {
 
   _addApiMethod(method, handler) {
     if (!method || typeof method !== 'string') {
-      throw new Error('Method name must be a non-empty string');
+      const received = method === undefined ? 'undefined' : 
+                      method === null ? 'null' : 
+                      method === '' ? 'empty string' :
+                      `${typeof method} "${method}"`;
+      throw new ValidationError(
+        `Method name must be a non-empty string. Received: ${received}. Example: addApiMethod('getData', async (context) => { /* handler */ })`,
+        {
+          field: 'method',
+          value: method,
+          validValues: 'non-empty string'
+        }
+      );
     }
     if (!VALID_JS_IDENTIFIER.test(method)) {
-      throw new Error(`Method name '${method}' is not a valid JavaScript identifier`);
+      const invalidChars = method.match(/[^a-zA-Z0-9_$]/g);
+      const suggestion = invalidChars ? 
+        `Remove invalid characters: ${[...new Set(invalidChars)].join(', ')}` :
+        'Method name must start with a letter, underscore, or $';
+      throw new ValidationError(
+        `Method name '${method}' is not a valid JavaScript identifier. ${suggestion}. Valid examples: getData, _private, $special, method123`,
+        {
+          field: 'method',
+          value: method,
+          validValues: 'valid JavaScript identifier'
+        }
+      );
     }
     if (typeof handler !== 'function') {
-      throw new Error(`Implementation for '${method}' must be a function.`)
+      throw new ValidationError(
+        `Implementation for '${method}' must be a function. Received: ${typeof handler}. Example: addApiMethod('${method}', async (context) => { /* handler code */ })`,
+        {
+          field: 'handler',
+          value: handler,
+          validValues: 'function'
+        }
+      );
     }
     
     // Check if property already exists on the instance or prototype chain
     if (method in this) {
-      throw new Error(`Cannot define API method '${method}': property already exists on API instance`);
+      const propertyType = typeof this[method];
+      const suggestion = this._apiMethods.has(method) ? 
+        'This method was already defined. Use a different name or remove the previous definition.' :
+        `This conflicts with an existing ${propertyType} property. Choose a different method name.`;
+      throw new MethodError(
+        `Cannot define API method '${method}': property already exists on API instance. ${suggestion}`,
+        {
+          methodName: method,
+          suggestion
+        }
+      );
     }
     
     this._apiMethods.set(method, handler)
@@ -452,13 +630,42 @@ export class Api {
 
   _addScopeMethod(method, handler) {
     if (!method || typeof method !== 'string') {
-      throw new Error('Method name must be a non-empty string');
+      const received = method === undefined ? 'undefined' : 
+                      method === null ? 'null' : 
+                      method === '' ? 'empty string' :
+                      `${typeof method} "${method}"`;
+      throw new ValidationError(
+        `Scope method name must be a non-empty string. Received: ${received}. Example: addScopeMethod('list', async (context) => { /* handler */ })`,
+        {
+          field: 'method',
+          value: method,
+          validValues: 'non-empty string'
+        }
+      );
     }
     if (!VALID_JS_IDENTIFIER.test(method)) {
-      throw new Error(`Method name '${method}' is not a valid JavaScript identifier`);
+      const invalidChars = method.match(/[^a-zA-Z0-9_$]/g);
+      const suggestion = invalidChars ? 
+        `Remove invalid characters: ${[...new Set(invalidChars)].join(', ')}` :
+        'Method name must start with a letter, underscore, or $';
+      throw new ValidationError(
+        `Scope method name '${method}' is not a valid JavaScript identifier. ${suggestion}. Valid examples: getData, _private, $special, method123`,
+        {
+          field: 'method', 
+          value: method,
+          validValues: 'valid JavaScript identifier'
+        }
+      );
     }
     if (typeof handler !== 'function') {
-      throw new Error(`Implementation for '${method}' must be a function.`)
+      throw new ValidationError(
+        `Implementation for scope method '${method}' must be a function. Received: ${typeof handler}. Example: addScopeMethod('${method}', async (context) => { /* handler code */ })`,
+        {
+          field: 'handler',
+          value: handler,
+          validValues: 'function'
+        }
+      )
     }
     
     // Scope methods don't need property conflict checking since they're not on the main API
@@ -481,11 +688,32 @@ export class Api {
         const { handler: _, functionName: __, ...rest } = hookDef
         hookAddOptions = rest
       } else {
-        throw new Error(`Hook '${hookName}' must be a function or object`)
+        const received = hookDef === undefined ? 'undefined' : 
+                        hookDef === null ? 'null' : 
+                        `${typeof hookDef}`;
+        throw new ValidationError(
+          `Hook '${hookName}' must be a function or object. Received: ${received}. Examples:\n` +
+          `  As function: hooks: { myHook: async (context) => { /* code */ } }\n` +
+          `  As object: hooks: { myHook: { handler: async (context) => { /* code */ }, beforePlugin: 'other-plugin' } }`,
+          {
+            field: 'hookDef',
+            value: hookDef,
+            validValues: 'function or object'
+          }
+        )
       }
       
       if (typeof handler !== 'function') {
-        throw new Error(`Hook '${hookName}' must have a function handler`)
+        const received = handler === undefined ? 'undefined' : `${typeof handler}`;
+        throw new ValidationError(
+          `Hook '${hookName}' must have a function handler. Received: ${received}. ` +
+          `When using object syntax, provide: { handler: async (context) => { /* code */ } }`,
+          {
+            field: 'handler',
+            value: handler,
+            validValues: 'function'
+          }
+        )
       }
       
       this._addHook(hookName, `api:${this.options.name}`, functionName, hookAddOptions, handler)
@@ -516,13 +744,42 @@ export class Api {
 
   _addScope(name, options = {}, extras = {}) {
     if (!name || typeof name !== 'string') {
-      throw new Error('Scope name must be a non-empty string');
+      const received = name === undefined ? 'undefined' : 
+                      name === null ? 'null' : 
+                      name === '' ? 'empty string' :
+                      `${typeof name} "${name}"`;
+      throw new ValidationError(
+        `Scope name must be a non-empty string. Received: ${received}. Example: api.addScope('users', { /* options */ })`,
+        {
+          field: 'name',
+          value: name,
+          validValues: 'non-empty string'
+        }
+      );
     }
     if (!VALID_JS_IDENTIFIER.test(name)) {
-      throw new Error(`Scope name '${name}' is not a valid JavaScript identifier`);
+      const invalidChars = name.match(/[^a-zA-Z0-9_$]/g);
+      const suggestion = invalidChars ? 
+        `Remove invalid characters: ${[...new Set(invalidChars)].join(', ')}` :
+        'Scope name must start with a letter, underscore, or $';
+      throw new ValidationError(
+        `Scope name '${name}' is not a valid JavaScript identifier. ${suggestion}. Valid examples: users, _private, $special, scope123`,
+        {
+          field: 'name',
+          value: name,
+          validValues: 'valid JavaScript identifier'
+        }
+      );
     }
     if (this._scopes.has(name)) {
-      throw new Error(`Scope '${name}' already exists`);
+      const existingScopes = Array.from(this._scopes.keys());
+      throw new ScopeError(
+        `Scope '${name}' already exists. Existing scopes: ${existingScopes.join(', ')}. Use a different name or remove the existing scope first.`,
+        {
+          scopeName: name,
+          availableScopes: existingScopes
+        }
+      );
     }
     
     const { hooks = {}, apiMethods = {}, scopeMethods = {}, vars = {}, helpers = {} } = extras;
@@ -541,11 +798,32 @@ export class Api {
         const { handler: _, functionName: __, ...rest } = hookDef
         hookAddOptions = rest
       } else {
-        throw new Error(`Hook '${hookName}' must be a function or object`)
+        const received = hookDef === undefined ? 'undefined' : 
+                        hookDef === null ? 'null' : 
+                        `${typeof hookDef}`;
+        throw new ValidationError(
+          `Hook '${hookName}' in scope '${name}' must be a function or object. Received: ${received}. Examples:\n` +
+          `  As function: hooks: { myHook: async (context) => { /* code */ } }\n` +
+          `  As object: hooks: { myHook: { handler: async (context) => { /* code */ }, beforePlugin: 'other-plugin' } }`,
+          {
+            field: 'hookDef',
+            value: hookDef,
+            validValues: 'function or object'
+          }
+        )
       }
       
       if (typeof handler !== 'function') {
-        throw new Error(`Hook '${hookName}' must have a function handler`)
+        const received = handler === undefined ? 'undefined' : `${typeof handler}`;
+        throw new ValidationError(
+          `Hook '${hookName}' in scope '${name}' must have a function handler. Received: ${received}. ` +
+          `When using object syntax, provide: { handler: async (context) => { /* code */ } }`,
+          {
+            field: 'handler',
+            value: handler,
+            validValues: 'function'
+          }
+        )
       }
       
       // Wrap handler to only run for this scope
@@ -575,10 +853,28 @@ export class Api {
     // Handle scopes alias
     if (aliasName !== null) {
       if (typeof aliasName !== 'string' || !aliasName.trim()) {
-        throw new Error('Alias name must be a non-empty string');
+        const received = aliasName === undefined ? 'undefined' : 
+                        aliasName === '' ? 'empty string' :
+                        `${typeof aliasName} "${aliasName}"`;
+        throw new ValidationError(
+          `Alias name must be a non-empty string. Received: ${received}. Example: api.setScopeAlias('resources')`,
+          {
+            field: 'aliasName',
+            value: aliasName,
+            validValues: 'non-empty string'
+          }
+        );
       }
       if (aliasName in this) {
-        throw new Error(`Cannot set scope alias '${aliasName}': property already exists on API instance`);
+        const propertyType = typeof this[aliasName];
+        throw new ConfigurationError(
+          `Cannot set scope alias '${aliasName}': property already exists on API instance (${propertyType}). Choose a different alias name.`,
+          {
+            received: aliasName,
+            expected: 'unique property name',
+            example: "api.setScopeAlias('resources')"
+          }
+        );
       }
       // Store the alias name
       this._scopeAlias = aliasName;
@@ -593,10 +889,28 @@ export class Api {
     // Handle addScope alias
     if (addScopeAlias !== null) {
       if (typeof addScopeAlias !== 'string' || !addScopeAlias.trim()) {
-        throw new Error('addScope alias must be a non-empty string');
+        const received = addScopeAlias === undefined ? 'undefined' : 
+                        addScopeAlias === '' ? 'empty string' :
+                        `${typeof addScopeAlias} "${addScopeAlias}"`;
+        throw new ValidationError(
+          `addScope alias must be a non-empty string. Received: ${received}. Example: api.setScopeAlias('resources', 'addResource')`,
+          {
+            field: 'addScopeAlias',
+            value: addScopeAlias,
+            validValues: 'non-empty string'
+          }
+        );
       }
       if (addScopeAlias in this) {
-        throw new Error(`Cannot set addScope alias '${addScopeAlias}': property already exists on API instance`);
+        const propertyType = typeof this[addScopeAlias];
+        throw new ConfigurationError(
+          `Cannot set addScope alias '${addScopeAlias}': property already exists on API instance (${propertyType}). Choose a different alias name.`,
+          {
+            received: addScopeAlias,
+            expected: 'unique property name',
+            example: "api.setScopeAlias('resources', 'addResource')"
+          }
+        );
       }
       // Store the addScope alias name
       this._addScopeAlias = addScopeAlias;
@@ -614,22 +928,77 @@ export class Api {
 
 
   use(plugin, options = {}) {
-    if (typeof plugin !== 'object' || plugin === null) throw new Error('Plugin must be an object.')
-    if (typeof plugin.name !== 'string' || plugin.name.trim() === '') throw new Error('Plugin must have a non-empty "name" property.')
-    if (typeof plugin.install !== 'function') throw new Error(`Plugin '${plugin.name}' must have an 'install' function.`)
+    if (typeof plugin !== 'object' || plugin === null) {
+      const received = plugin === undefined ? 'undefined' : 
+                      plugin === null ? 'null' : 
+                      `${typeof plugin}`;
+      throw new PluginError(
+        `Plugin must be an object. Received: ${received}. Example: api.use({ name: 'my-plugin', install: (context) => { /* setup */ } })`,
+        {
+          pluginName: 'unknown',
+          installedPlugins: Array.from(this._installedPlugins)
+        }
+      );
+    }
+    if (typeof plugin.name !== 'string' || plugin.name.trim() === '') {
+      const received = plugin.name === undefined ? 'undefined (missing name property)' : 
+                      plugin.name === null ? 'null' : 
+                      plugin.name === '' ? 'empty string' :
+                      `${typeof plugin.name} "${plugin.name}"`;
+      throw new PluginError(
+        `Plugin must have a non-empty name property. Received: ${received}. Example: { name: 'my-plugin', install: (context) => { /* setup */ } }`,
+        {
+          pluginName: 'unknown',
+          installedPlugins: Array.from(this._installedPlugins)
+        }
+      );
+    }
+    if (typeof plugin.install !== 'function') {
+      const received = plugin.install === undefined ? 'undefined (missing install property)' : `${typeof plugin.install}`;
+      throw new PluginError(
+        `Plugin '${plugin.name}' must have an install function. Received: ${received}. Example: { name: '${plugin.name}', install: (context) => { /* setup code */ } }`,
+        {
+          pluginName: plugin.name,
+          installedPlugins: Array.from(this._installedPlugins)
+        }
+      );
+    }
 
     if (plugin.name === 'api' || plugin.name === 'scopes') {
-      throw new Error(`Plugin name '${plugin.name}' is reserved.`)
+      throw new PluginError(
+        `Plugin name '${plugin.name}' is reserved. These names are used internally by the API. Choose a different name like '${plugin.name}-plugin' or 'custom-${plugin.name}'.`,
+        {
+          pluginName: plugin.name,
+          installedPlugins: Array.from(this._installedPlugins)
+        }
+      );
     }
 
     if (this._installedPlugins.has(plugin.name)) {
-      throw new Error(`Plugin '${plugin.name}' is already installed on API '${this.options.name}'.`)
+      const installedPlugins = Array.from(this._installedPlugins);
+      throw new PluginError(
+        `Plugin '${plugin.name}' is already installed on API '${this.options.name}'. Installed plugins: ${installedPlugins.join(', ')}. Each plugin can only be installed once.`,
+        {
+          pluginName: plugin.name,
+          installedPlugins
+        }
+      );
     }
 
     const dependencies = plugin.dependencies || []
     for (const depName of dependencies) {
       if (!this._installedPlugins.has(depName)) {
-        throw new Error(`Plugin '${plugin.name}' requires dependency '${depName}' which is not installed.`)
+        const installedPlugins = Array.from(this._installedPlugins);
+        const suggestion = installedPlugins.length > 0 ? 
+          `Installed plugins: ${installedPlugins.join(', ')}` : 
+          'No plugins are currently installed';
+        throw new PluginError(
+          `Plugin '${plugin.name}' requires dependency '${depName}' which is not installed. ${suggestion}. Install '${depName}' first using api.use(${depName}Plugin).`,
+          {
+            pluginName: plugin.name,
+            installedPlugins
+          }
+        );
       }
     }
 
@@ -666,7 +1035,13 @@ export class Api {
       plugin.install(installContext)
       this._installedPlugins.add(plugin.name)
     } catch (error) {
-      throw new Error(`Failed to install plugin '${plugin.name}': ${error.message}`, { cause: error })
+      throw new PluginError(
+        `Failed to install plugin '${plugin.name}': ${error.message}`,
+        {
+          pluginName: plugin.name,
+          installedPlugins: Array.from(this._installedPlugins)
+        }
+      )
     }
     return this
   }

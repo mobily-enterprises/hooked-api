@@ -292,6 +292,130 @@ this case, we defined `schema` (which at this point is not used in the current i
 Both scopes will return records with `generatedOn` set to the current date, but only `books` will have 
 `titleAndRating` since the hook is limited to the `books` scope. 
 
+## Logging
+
+The API includes built-in logging capabilities with customizable log levels, formats, and outputs.
+
+### Configuration
+
+Configure logging when creating an API instance. The defaults are shown below:
+
+```javascript
+const api = new Api({
+  name: 'my-api',
+  version: '1.0.0',
+  logging: {
+    level: 'info',        // 'error', 'warn', 'info', 'debug', 'trace'
+    format: 'pretty',     // 'pretty' or 'json'
+    timestamp: true,      // Include timestamps in logs
+    colors: true,         // Use ANSI colors (only with 'pretty' format)
+    logger: console       // Custom logger object (must have log/error/warn methods)
+  }
+});
+```
+
+**Note:** When providing partial logging configuration, always include the `logger` property to avoid issues:
+
+```javascript
+// Good - includes logger
+const api = new Api({
+  name: 'my-api',
+  version: '1.0.0',
+  logging: { level: 'debug', logger: console }
+});
+
+// May cause issues - missing logger
+const api = new Api({
+  name: 'my-api',
+  version: '1.0.0',
+  logging: { level: 'debug' }  // Missing logger property
+});
+```
+
+### Log Levels
+
+Available log levels (from least to most verbose):
+- `error` (0) - Only errors
+- `warn` (1) - Warnings and errors
+- `info` (2) - General information, warnings, and errors (default)
+- `debug` (3) - Detailed debugging information
+- `trace` (4) - Very detailed trace information
+
+You can also use numeric levels with the `LogLevel` export:
+
+```javascript
+import { Api, LogLevel } from './index.js';
+
+const api = new Api({
+  name: 'my-api',
+  version: '1.0.0',
+  logging: { level: LogLevel.DEBUG }
+});
+```
+
+### Using Logging in Handlers
+
+All handlers receive a `log` object with level-specific methods:
+
+```javascript
+apiMethods: {
+  getData: async ({ params, log, vars }) => {
+    log.debug('Getting data', { params });
+    
+    try {
+      const result = await fetchData(params);
+      log.info('Data retrieved successfully', { count: result.length });
+      return result;
+    } catch (error) {
+      log.error('Failed to get data', { error: error.message });
+      throw error;
+    }
+  }
+}
+```
+
+### Scope-Specific Logging
+
+Scopes can have their own log levels:
+
+```javascript
+api.addScope('users', {
+  logging: { level: 'debug' },  // More verbose for this scope
+  schema: { /* ... */ }
+});
+```
+
+### Log Output Examples
+
+**Pretty format (default):**
+```
+2025-06-28T12:00:00.000Z [INFO] [my-api:getData] Data retrieved successfully { count: 42 }
+2025-06-28T12:00:01.000Z [ERROR] [my-api:users.create] Validation failed { field: 'email' }
+```
+
+**JSON format:**
+```json
+{"level":"INFO","api":"my-api","context":"getData","message":"Data retrieved successfully","data":{"count":42},"timestamp":"2025-06-28T12:00:00.000Z"}
+```
+
+### Custom Logger
+
+You can provide a custom logger implementation:
+
+```javascript
+const customLogger = {
+  log: (message) => fs.appendFileSync('app.log', message + '\n'),
+  error: (message) => fs.appendFileSync('error.log', message + '\n'),
+  warn: (message) => fs.appendFileSync('warn.log', message + '\n')
+};
+
+const api = new Api({
+  name: 'my-api',
+  version: '1.0.0',
+  logging: { logger: customLogger }
+});
+```
+
 To use it:
 
 ```javascript
@@ -477,91 +601,126 @@ api.use(GeneratedOnPlugin)
 
 ## Public API Surface
 
-The API instance exposes only these public properties and methods:
+The API instance exposes these public properties and methods:
 
-- `api.use(plugin, options)` - Install plugins
-- `api.customize(config)` - Add hooks, methods, vars, and helpers
-- `api.addScope(name, options, extras)` - Add scopes with configuration
-- `api.setScopeAlias(name)` - Create an alias for the scopes property
+- `api.use(plugin, options)` - Install plugins with optional configuration
+- `api.customize(config)` - Add hooks, methods, vars, and helpers after initialization
+- `api.addScope(name, options, extras)` - Add scopes with configuration and optional customizations
+- `api.setScopeAlias(aliasName, addScopeAlias)` - Create aliases for the scopes property and addScope method
 - `api.scopes` - Access to defined scopes (e.g., `api.scopes.users.get()`)
 - `api.[aliasName]` - If setScopeAlias was called (e.g., `api.tables` for database APIs)
-- `api.methodName()` - Direct calls to defined API methods
+- `api.[addScopeAlias]` - If setScopeAlias was called with second parameter (e.g., `api.addTable`)
+- `api.[methodName]()` - Direct calls to defined API methods
+- `api.options` - The API configuration (name, version, etc.)
+
+### Static Methods
+
+- `Api.registry.get(name, version)` - Get a registered API instance
+- `Api.registry.list()` - List all registered APIs and their versions
+- `Api.registry.has(name, version)` - Check if an API is registered
+- `Api.registry.versions(name)` - Get all versions of a specific API
 
 
-## Basic API Creation
+## Handler Context Reference
 
-### Handler Context Full Structure
+### Global API Methods
 
-#### Global API Methods
+When you define an API method (via `apiMethods` in customize or via plugin), the handler receives:
+
 ```javascript
 // Handler signature for global API methods:
-({ 
+async ({ 
   params,         // Parameters passed to the method call
   context,        // Mutable object for passing data between hooks
   vars,           // Variables proxy
   helpers,        // Helpers proxy
   scope,          // null (no current scope for global methods)
   scopes,         // Access to all scopes (api.scopes)
-  runHooks,       // Function to run hooks
-  name,           // The method name ('method' in this case)
-  apiOptions,     // Frozen API configuration
-  pluginOptions,  // Frozen plugin configurations
+  runHooks,       // Function to run hooks: runHooks(hookName)
+  log,            // Logger instance for this context
+  name,           // The method name being called
+  apiOptions,     // Frozen API configuration {name, version, ...}
+  pluginOptions,  // Frozen plugin configurations {pluginName: options, ...}
   // If setScopeAlias was called:
   [aliasName]     // Same as 'scopes' but with custom name (e.g., 'tables')
 }) => {
-  // Global methods receive scopes proxy but no current scope
-});
-```
-
-#### Scope Methods
-```javascript
-// Handler signature for scope methods:
-({ 
-  params,          // Parameters passed to the method call
-  context,         // Mutable object for passing data between hooks
-  vars,            // Variables proxy (merged with scope vars)
-  helpers,         // Helpers proxy (merged with scope helpers)
-  scope,           // Current scope object (e.g., api.scopes.users when in 'authors' scope)
-  scopes,          // All scopes proxy (api.scopes)
-  runHooks,        // Function to run hooks
-  name,            // The method name ('method' in this case)
-  apiOptions,      // Frozen API configuration
-  pluginOptions,   // Frozen plugin configurations
-  scopeOptions,    // Frozen scope-specific options
-  scopeName,       // Current scope name as string
-  // If setScopeAlias was called:
-  [aliasName]      // Same as 'scopes' but with custom name (e.g., 'tables')
-}) => {
-  // Scope methods can call other methods on the current scope directly:
-  // await scope.validate(params)
-});
-
-// Example with alias:
-api.setScopeAlias('table');
-// Now handlers also receive 'table' parameter:
-({ params, scope, scopes, scopeName, table }) => {
-  // scope = current scope object (e.g., api.scopes.users)
-  // scopes = all scopes proxy (api.scopes) 
-  // table = same as scopes (alias for api.scopes)
-  
-  // Clean syntax:
-  await scope.validate(params);  // Validate current scope
-  await table.orders.get({ userId: params.id });  // Access other scopes via alias
+  // Implementation
+  await runHooks('beforeProcess');
+  const result = await doSomething(params);
+  context.result = result;
+  await runHooks('afterProcess');
+  return context.result;
 }
 ```
 
-#### Hook Handlers
+### Scope Methods
+
+When you define a scope method (via `scopeMethods` in customize or via plugin), the handler receives:
+
+```javascript
+// Handler signature for scope methods:
+async ({ 
+  params,          // Parameters passed to the method call
+  context,         // Mutable object for passing data between hooks
+  vars,            // Variables proxy (merged: global + scope vars)
+  helpers,         // Helpers proxy (merged: global + scope helpers)
+  scope,           // Current scope object (e.g., api.scopes.users)
+  scopes,          // All scopes proxy (api.scopes)
+  runHooks,        // Function to run hooks: runHooks(hookName)
+  log,             // Logger instance for this context
+  name,            // The method name being called
+  apiOptions,      // Frozen API configuration {name, version, ...}
+  pluginOptions,   // Frozen plugin configurations {pluginName: options, ...}
+  scopeOptions,    // Frozen scope-specific options (passed to addScope)
+  scopeName,       // Current scope name as string (e.g., 'users')
+  // If setScopeAlias was called:
+  [aliasName]      // Same as 'scopes' but with custom name (e.g., 'tables')
+}) => {
+  // Implementation
+  console.log(`Called ${name} on scope ${scopeName}`);
+  
+  // Can call other methods on current scope directly:
+  await scope.validate(params);
+  
+  // Or access other scopes:
+  const relatedData = await scopes.related.get({ id: params.relatedId });
+  
+  return processData(params, scopeOptions);
+}
+```
+
+#### Example: Using Scope Aliases
+
+```javascript
+api.setScopeAlias('tables');
+
+// Now in handlers:
+async ({ params, scope, scopes, tables, scopeName }) => {
+  // 'tables' is the same as 'scopes'
+  // 'scope' is the current scope object
+  
+  // Clean, domain-specific syntax:
+  await scope.validate(params);  // Validate current table
+  await tables.orders.get({ userId: params.id });  // Access orders table
+}
+```
+
+### Hook Handlers
+
+Hook handlers receive a different parameter name for user data:
+
 ```javascript
 // Hook handler signature (when added via plugin or customize):
-({ 
-  params,          // Empty object for hooks
-  context,         // The context object passed to runHooks
+async ({ 
+  methodParams,    // The params passed to the original method call
+  context,         // The context object from the method (mutable, shared between hooks)
   vars,            // Variables (scope-aware if hook run with scope)
   helpers,         // Helpers (scope-aware if hook run with scope)
   scope,           // Current scope object if hook run in scope context, null otherwise
   scopes,          // All scopes proxy (api.scopes)
   runHooks,        // Function to run hooks (careful of recursion!)
-  name,            // Hook name
+  log,             // Logger instance for this context
+  name,            // Hook name (e.g., 'beforeFetch', 'afterFetch')
   apiOptions,      // Frozen API configuration
   pluginOptions,   // Frozen plugin configurations
   scopeOptions,    // Frozen scope options (only if hook run with scope)
@@ -570,41 +729,285 @@ api.setScopeAlias('table');
   [aliasName]      // Same as 'scopes' but with custom name
 }) => {
   // Hook handler implementation
-});
+  console.log(`Hook ${name} called with params:`, methodParams);
+  
+  // Modify context to share data with other hooks or the method
+  context.processedBy = context.processedBy || [];
+  context.processedBy.push(name);
+  
+  // Return false to stop the hook chain
+  if (context.skipRemaining) {
+    return false;
+  }
+}
 ```
 
-### Plugin Install Context
+#### Important Notes on Hooks:
+- Hooks receive `methodParams` instead of `params` to distinguish from method handlers
+- The `context` object is shared between all hooks and the method
+- Returning `false` from a hook stops the execution of remaining hooks in the chain
+- Hooks can be global (run for all scopes) or scope-specific
+
+## Plugin System
+
+### Plugin Structure
+
 ```javascript
 const myPlugin = {
-  name: 'myPlugin',
-  install: ({
-    addApiMethod,       // Add global API methods
-    addScopeMethod,     // Define scope methods
-    addScope,           // Add scopes
-    setScopeAlias,      // Create scope alias
-    addHook,            // Add hooks (with plugin name auto-injected)
-    runHooks,           // Run hooks
-    vars,               // Variables proxy
-    helpers,            // Helpers proxy
-    scopes,             // Access to scopes
-    name,               // Plugin name
-    apiOptions,         // Frozen API configuration
-    pluginOptions,      // Frozen plugin configurations
-    context             // Empty context object
-  }) => {
-    // Plugin installation logic
+  name: 'myPlugin',              // Required: unique plugin name
+  dependencies: ['otherPlugin'], // Optional: array of required plugin names
+  install: (installContext) => { // Required: installation function
+    // Plugin setup code
   }
 };
 ```
 
-### Testing Utility
+### Plugin Install Context
+
+The install function receives a context object with these properties:
 
 ```javascript
-import { resetGlobalRegistryForTesting } from 'hooked-api';
+install: ({
+  // Setup methods
+  addApiMethod,       // Function to add global API methods
+  addScopeMethod,     // Function to define scope methods
+  addScope,           // Function to add scopes
+  setScopeAlias,      // Function to create scope aliases
+  
+  // Hook management
+  addHook,            // Special function that auto-injects plugin name:
+                      // addHook(hookName, functionName, hookOptions, handler)
+  runHooks,           // Function to run hooks
+  
+  // Data access
+  vars,               // Variables proxy (mutable)
+  helpers,            // Helpers proxy (mutable)
+  scopes,             // Access to all scopes
+  
+  // Logging
+  log,                // Logger instance for this plugin context
+  
+  // Plugin metadata
+  name,               // Plugin name (same as plugin.name)
+  apiOptions,         // Frozen API configuration
+  pluginOptions,      // Frozen plugin configurations
+  context             // Empty context object for plugin use
+}) => {
+  // Example usage:
+  
+  // Add a global method
+  addApiMethod('getData', async ({ params, vars, helpers }) => {
+    return await helpers.fetch(params.url);
+  });
+  
+  // Add a scope method
+  addScopeMethod('validate', async ({ params, scopeOptions }) => {
+    return validateAgainstSchema(params, scopeOptions.schema);
+  });
+  
+  // Add a hook
+  addHook('beforeFetch', 'addAuth', {}, async ({ context, vars }) => {
+    context.headers = { ...context.headers, Authorization: vars.apiKey };
+  });
+  
+  // Set variables
+  vars.apiKey = 'default-key';
+  
+  // Add helpers
+  helpers.fetch = async (url) => {
+    // Custom fetch implementation
+  };
+}
+```
 
-// In tests, clear all registered APIs
+### Using Plugins
+
+```javascript
+// Install a plugin
+api.use(myPlugin);
+
+// Install with options
+api.use(myPlugin, {
+  apiKey: 'custom-key',
+  endpoint: 'https://api.example.com'
+});
+
+// Options are available in handlers via pluginOptions
+async ({ pluginOptions }) => {
+  const options = pluginOptions.myPlugin; // { apiKey: 'custom-key', ... }
+}
+```
+
+## Testing
+
+### Registry Management
+
+The library maintains a global registry of API instances by name and version. For testing, you can reset this registry:
+
+```javascript
+import { resetGlobalRegistryForTesting } from './index.js';
+
+// In your test setup
 beforeEach(() => {
   resetGlobalRegistryForTesting();
 });
+
+// Now you can create APIs with the same name/version in each test
+test('my test', () => {
+  const api = new Api({ name: 'test-api', version: '1.0.0' });
+  // ... test code
+});
 ```
+
+### Testing Best Practices
+
+1. **Reset the registry between tests** to avoid conflicts
+2. **Use unique API names** per test if running tests in parallel
+3. **Mock external dependencies** in your plugins
+4. **Test hooks independently** by creating minimal APIs
+
+```javascript
+// Example: Testing a plugin
+import { Api } from './index.js';
+
+test('myPlugin adds expected functionality', async () => {
+  const api = new Api({ name: 'test', version: '1.0.0' });
+  
+  const myPlugin = {
+    name: 'test-plugin',
+    install: ({ addApiMethod, vars }) => {
+      vars.testValue = 'plugin-loaded';
+      addApiMethod('getValue', async ({ vars }) => vars.testValue);
+    }
+  };
+  
+  api.use(myPlugin);
+  
+  const result = await api.getValue();
+  expect(result).toBe('plugin-loaded');
+});
+```
+
+## Undocumented Features
+
+The following features are implemented in index.js but not covered in this documentation:
+
+### 1. Error Classes and Error Handling
+- **Exported Error Classes**: `HookedApiError`, `ConfigurationError`, `ValidationError`, `PluginError`, `ScopeError`, `MethodError`
+- Each error class has specific properties (e.g., `code`, `received`, `expected`, `field`, `validValues`)
+- Error codes: 'CONFIGURATION_ERROR', 'VALIDATION_ERROR', 'PLUGIN_ERROR', 'SCOPE_ERROR', 'METHOD_ERROR'
+- Comprehensive error messages with examples and suggestions
+
+### 2. Hook Placement Options
+The `addHook` function accepts placement options that aren't documented:
+- `beforePlugin` - Insert before all hooks from a specific plugin
+- `afterPlugin` - Insert after all hooks from a specific plugin  
+- `beforeFunction` - Insert before a specific function
+- `afterFunction` - Insert after a specific function
+- Only one placement option allowed per hook
+
+### 3. Registry Version Handling
+`Api.registry.get()` supports more than just 'latest':
+- Exact versions: `Api.registry.get('my-api', '1.0.0')`
+- Semver ranges: `Api.registry.get('my-api', '^1.0.0')`
+- Returns `null` for invalid/empty version strings
+
+### 4. Security Features
+- **Prototype Pollution Protection**: Blocks dangerous properties (`__proto__`, `constructor`, `prototype`)
+- **Symbol Property Filtering**: Symbols are filtered in scope proxy access
+- **Property Conflict Detection**: Prevents overwriting existing API properties
+- **Frozen Options**: All options objects are frozen when passed to handlers
+
+### 5. LogLevel Export
+- `LogLevel` enum is exported with numeric constants:
+  ```javascript
+  import { LogLevel } from './index.js';
+  // LogLevel.ERROR = 0, LogLevel.WARN = 1, etc.
+  ```
+
+### 6. Validation Rules
+- Method and scope names must be valid JavaScript identifiers (`/^[a-zA-Z_$][a-zA-Z0-9_$]*$/`)
+- Reserved plugin names: 'api' and 'scopes' are forbidden
+- Duplicate detection for: API versions, scope names, plugin names
+
+### 7. Advanced Customize Options
+The `customize()` method can accept hooks as objects with additional properties:
+```javascript
+{
+  hooks: {
+    myHook: {
+      handler: async () => {},
+      functionName: 'customName',
+      beforePlugin: 'other-plugin'
+    }
+  }
+}
+```
+
+### 8. Direct Scope Call Error
+Attempting to call a scope directly throws a helpful error:
+```javascript
+api.scopes.users() // Throws: "Direct scope call not supported. Use api.scopes.users.methodName()"
+```
+
+### 9. Performance Logging
+- All method calls, hook executions, and plugin installations include timing information
+- Debug/trace logs show detailed execution flow with durations
+
+### 10. Scope-Specific Features
+- **Scope-specific methods**: Can override global scope methods
+- **Scope-specific vars/helpers**: Merged with global ones (scope takes precedence)
+- **Scope-specific hooks**: Only run when methods are called on that scope
+
+### 11. Context Logger Methods
+The `log` object in handlers is a full logger with all methods:
+```javascript
+log('message')        // Same as log.info()
+log.error('message')
+log.warn('message')
+log.info('message')
+log.debug('message')
+log.trace('message')
+```
+
+### 12. Internal Method Access
+When adding methods or using customize, the library logs detailed trace information about what's being added (visible at trace log level).
+
+### 13. Hook Execution Control
+Hooks can return `false` to stop the execution of remaining hooks in the chain.
+
+### 14. Empty Hook Chains
+The system handles empty hook chains gracefully with trace logging.
+
+### 15. Customize During Construction
+The constructor accepts a second parameter for immediate customization:
+```javascript
+const api = new Api(options, {
+  apiMethods: {},
+  scopeMethods: {},
+  hooks: {},
+  vars: {},
+  helpers: {}
+});
+```
+
+### 16. Plugin Install Context Details
+- `addHook` in plugins automatically injects the plugin name
+- All add* methods in plugin context include trace logging
+- Plugin context methods are bound to maintain proper `this` context
+
+### 17. Method Name Validation
+The library provides detailed error messages for invalid method names, including:
+- Listing invalid characters
+- Suggestions for fixes
+- Examples of valid names
+
+### 18. Logging Configuration Merge Behavior
+When providing partial logging configuration, the library merges with defaults, but missing `logger` can cause issues (documented as a warning, but the full merge behavior isn't explained).
+
+### 19. Hook Handler Full Signature
+Hook handlers in scope context receive the scope object at `handlerParams.scope`, allowing direct method calls on the current scope.
+
+### 20. API Options Access
+The `api.options` property provides read access to the full configuration, including the merged logging configuration.
 

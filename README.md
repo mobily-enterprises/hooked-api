@@ -244,14 +244,14 @@ api.customize({
     get: async ({ context, scopeOptions, params, helpers, vars, scopeName, runHooks }) => { 
 
       // Run the before-fetch hooks
-      await runHooks('beforeFetch', context);
+      await runHooks('beforeFetch');
  
       // Fetch the data. The table used will depend on the scope name
       const response = await db.fetch(scopeName, params.id, { timeout: vars.timeout})
       context.record = response.json();
 
       // Run the after-fetch hooks
-      await runHooks('afterFetch', context);
+      await runHooks('afterFetch');
  
       return context.record
     }
@@ -438,14 +438,14 @@ export const DatabasePlugin = {
     addScopeMethod('get', async ({ context, scopeOptions, params, helpers, scopeName, runHooks }) => {
 
       // Run the before-fetch hooks
-      await runHooks('beforeFetch', context);
+      await runHooks('beforeFetch');
  
       // Fetch the data. The table used will depend on the scope name
       const response = await db.fetch(scopeName, params.id, { timeout: vars.timeout})
       context.record = response.json();
 
       // Run the after-fetch hooks
-      await runHooks('afterFetch', context);
+      await runHooks('afterFetch');
 
 
       return context.record
@@ -476,7 +476,7 @@ export const GeneratedOnPlugin = {
     helpers.makeDate = () => new Date()
 
     // The hook that will adds the generatedOn to all records
-    addHook('afterFetch', 'addGeneratedOn', ({context, helpers}) => {
+    addHook('afterFetch', 'addGeneratedOn', {}, ({context, helpers}) => {
       context.record.generatedOn = helpers.makeDate()
     })
   },
@@ -1063,16 +1063,25 @@ api.customize({
 });
 ```
 
-### Symbol Property Filtering
+### Symbol and Numeric Property Filtering
 
-Symbols are automatically filtered when accessing scope properties to prevent symbol-based attacks:
+The library filters certain property types when accessing scopes for security:
 
 ```javascript
+// Symbols are filtered to prevent symbol-based attacks
 const sym = Symbol('hidden');
 api.scopes[sym] = 'malicious';  // Silently ignored
-
-// Only string properties are accessible through scope proxy
 console.log(api.scopes[sym]);   // undefined
+
+// Numeric string properties are also filtered
+api.scopes['123'] = 'malicious';  // Silently ignored
+console.log(api.scopes['123']);   // undefined
+
+// This prevents array-like access patterns
+api.scopes.users[0]  // undefined (security feature)
+
+// Use proper API methods instead
+api.scopes.users.get({ id: 123 })  // Correct approach
 ```
 
 ### Best Practices for API Developers
@@ -1490,7 +1499,6 @@ install: ({
   // Hook management
   addHook,            // Special function that auto-injects plugin name:
                       // addHook(hookName, functionName, hookOptions, handler)
-  runHooks,           // Function to run hooks
   
   // Data access
   vars,               // Variables proxy (mutable)
@@ -1703,11 +1711,12 @@ Properties:
 - `methodName` - The method that caused the error
 - `suggestion` - Suggested correct usage
 
-### Importing Error Classes
+### Importing Error Classes and Constants
 
 ```javascript
 import { 
   Api, 
+  LogLevel,
   HookedApiError,
   ValidationError,
   PluginError,

@@ -392,6 +392,59 @@ export class Api {
     return proxy;
   }
   
+  _formatAndOutput(level, message, data, context, apiName, loggingOpts, customLogger) {
+    const levelName = LOG_LEVEL_NAMES[level];
+    const timestamp = loggingOpts.timestamp ? new Date().toISOString() : '';
+    
+    // Build the log prefix
+    let prefix = '';
+    if (loggingOpts.format === 'pretty' && loggingOpts.colors && customLogger === console) {
+      const color = LOG_COLORS[levelName];
+      prefix = `${color}[${levelName}]${COLORS.reset}`;
+      if (context) {
+        prefix += ` ${COLORS.cyan}[${apiName}${context ? ':' + context : ''}]${COLORS.reset}`;
+      } else {
+        prefix += ` ${COLORS.cyan}[${apiName}]${COLORS.reset}`;
+      }
+    } else {
+      prefix = `[${levelName}] [${apiName}${context ? ':' + context : ''}]`;
+    }
+    
+    if (timestamp) {
+      prefix = `${timestamp} ${prefix}`;
+    }
+    
+    // Format the message
+    let output = `${prefix} ${message}`;
+    
+    // Log based on level
+    if (data !== undefined) {
+      if (loggingOpts.format === 'json') {
+        customLogger.log(JSON.stringify({ level: levelName, api: apiName, context, message, data, timestamp }));
+      } else {
+        if (level === LogLevel.ERROR) {
+          customLogger.error(output, data);
+        } else if (level === LogLevel.WARN) {
+          customLogger.warn(output, data);
+        } else {
+          customLogger.log(output, data);
+        }
+      }
+    } else {
+      if (loggingOpts.format === 'json') {
+        customLogger.log(JSON.stringify({ level: levelName, api: apiName, context, message, timestamp }));
+      } else {
+        if (level === LogLevel.ERROR) {
+          customLogger.error(output);
+        } else if (level === LogLevel.WARN) {
+          customLogger.warn(output);
+        } else {
+          customLogger.log(output);
+        }
+      }
+    }
+  }
+
   _createLogger() {
     const apiName = this.options.name;
     const loggingOpts = this.options.logging;
@@ -401,57 +454,8 @@ export class Api {
       // Check if this log level is enabled FIRST, before any work
       if (level > this._logLevel) return;
       
-      // Lazy evaluation - only compute these if we're actually logging
-      const levelName = LOG_LEVEL_NAMES[level];
-      const timestamp = loggingOpts.timestamp ? new Date().toISOString() : '';
-      
-      // Build the log prefix
-      let prefix = '';
-      if (loggingOpts.format === 'pretty' && loggingOpts.colors && customLogger === console) {
-        const color = LOG_COLORS[levelName];
-        prefix = `${color}[${levelName}]${COLORS.reset}`;
-        if (context) {
-          prefix += ` ${COLORS.cyan}[${apiName}${context ? ':' + context : ''}]${COLORS.reset}`;
-        } else {
-          prefix += ` ${COLORS.cyan}[${apiName}]${COLORS.reset}`;
-        }
-      } else {
-        prefix = `[${levelName}] [${apiName}${context ? ':' + context : ''}]`;
-      }
-      
-      if (timestamp) {
-        prefix = `${timestamp} ${prefix}`;
-      }
-      
-      // Format the message
-      let output = `${prefix} ${message}`;
-      
-      // Log based on level
-      if (data !== undefined) {
-        if (loggingOpts.format === 'json') {
-          customLogger.log(JSON.stringify({ level: levelName, api: apiName, context, message, data, timestamp }));
-        } else {
-          if (level === LogLevel.ERROR) {
-            customLogger.error(output, data);
-          } else if (level === LogLevel.WARN) {
-            customLogger.warn(output, data);
-          } else {
-            customLogger.log(output, data);
-          }
-        }
-      } else {
-        if (loggingOpts.format === 'json') {
-          customLogger.log(JSON.stringify({ level: levelName, api: apiName, context, message, timestamp }));
-        } else {
-          if (level === LogLevel.ERROR) {
-            customLogger.error(output);
-          } else if (level === LogLevel.WARN) {
-            customLogger.warn(output);
-          } else {
-            customLogger.log(output);
-          }
-        }
-      }
+      // Delegate formatting and output to shared function
+      this._formatAndOutput(level, message, data, context, apiName, loggingOpts, customLogger);
     };
     
     return {
@@ -466,10 +470,16 @@ export class Api {
   _createContextLogger(contextName, scopeLogLevel = null) {
     // Check if we should use scope-specific log level
     const effectiveLogLevel = scopeLogLevel !== null ? scopeLogLevel : this._logLevel;
+    const apiName = this.options.name;
+    const loggingOpts = this.options.logging;
+    const customLogger = loggingOpts.logger;
     
     const log = (level, msg, data) => {
+      // Check against the EFFECTIVE level, not the API level
       if (level > effectiveLogLevel) return;
-      this._logger[LOG_LEVEL_NAMES[level].toLowerCase()](msg, data, contextName);
+      
+      // Delegate formatting and output to shared function
+      this._formatAndOutput(level, msg, data, contextName, apiName, loggingOpts, customLogger);
     };
     
     const logger = (msg, data) => log(LogLevel.INFO, msg, data);
@@ -758,7 +768,7 @@ export class Api {
     const handlers = this._hooks.get(name) || []
     if (handlers.length === 0) {
       this._logger.trace(`No handlers for hook '${name}'${scopeName ? ` in scope '${scopeName}'` : ''}`);
-      return context;
+      return true;
     }
     
     const hookContext = scopeName ? `${scopeName}:${name}` : name;
@@ -767,6 +777,7 @@ export class Api {
     const handlerContext = scopeName ? this._buildScopeContext(scopeName) : this._buildGlobalContext();
     
     let handlerIndex = 0;
+    let allSuccessful = true;
     for (const { handler, pluginName, functionName } of handlers) {
       const startTime = Date.now();
       this._logger.trace(`Hook handler '${functionName}' starting`, { plugin: pluginName, hook: name, scope: scopeName });
@@ -805,6 +816,7 @@ export class Api {
           
           if (result === false) {
             this._logger.debug(`Hook handler '${functionName}' stopped chain`, { plugin: pluginName, hook: name, duration: `${duration}ms` });
+            allSuccessful = false;
             break;
           } else {
             this._logger.trace(`Hook handler '${functionName}' completed`, { plugin: pluginName, hook: name, duration: `${duration}ms` });
@@ -824,7 +836,7 @@ export class Api {
     }
     
     this._logger.debug(`Hook '${name}' completed${scopeName ? ` for scope '${scopeName}'` : ''}`, { handlersRun: handlerIndex });
-    return context;
+    return allSuccessful;
   }
 
 
@@ -997,7 +1009,7 @@ export class Api {
         )
       }
       
-      this._addHook(hookName, `api:${this.options.name}`, functionName, hookAddOptions, handler)
+      this._addHook(hookName, `api-custom:${this.options.name}`, functionName, hookAddOptions, handler)
     }
 
     // Process vars
@@ -1137,7 +1149,7 @@ export class Api {
         }
       };
       
-      this._addHook(hookName, `scope:${name}`, functionName, hookAddOptions, wrappedHandler)
+      this._addHook(hookName, `scope-custom:${name}`, functionName, hookAddOptions, wrappedHandler)
       this._logger.trace(`Added scope-specific hook '${hookName}' for scope '${name}'`);
     }
     
@@ -1347,7 +1359,6 @@ export class Api {
           api._logger.trace(`Plugin '${plugin.name}' setting scope alias '${aliasName}'`);
           return api._setScopeAlias(aliasName, addScopeAlias);
         },
-        runHooks: this._runHooks.bind(this),
         
         // Special addHook that injects plugin name
         addHook: (hookName, functionName, hookAddOptions, handler) => {

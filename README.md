@@ -460,12 +460,12 @@ api.use(GeneratedOnPlugin)
 
 When adding hooks, you can control their execution order using placement options. This is useful when you need hooks to run in a specific sequence, regardless of when plugins are installed.
 
-Consider this scenario: You want to add logging to DbApi, but you need to log the original fetched record BEFORE any modifications:
+Consider this scenario: You want to add console messages to DbApi, but you need to write the message BEFORE any modifications:
 
 ```javascript
-// LoggingPlugin.js - A plugin that logs data access
-const LoggingPlugin = {
-  name: 'LoggingPlugin',
+// WriteMessagePlugin.js - A plugin that logs data access
+const WriteMessagePlugin = {
+  name: 'WriteMessagePlugin',
   install: ({ addHook }) => {
     // Run BEFORE any hooks from GeneratedOnPlugin
     addHook('afterFetch', 'logFetch', {
@@ -477,9 +477,9 @@ const LoggingPlugin = {
   }
 };
 
-// DbApi.js - Updated to include logging
+// DbApi.js - Updated to include WriteMessagePlugin
 import { DatabasePlugin } from './DatabasePlugin.js'
-import { LoggingPlugin } from './LoggingPlugin.js'
+import { WriteMessagePlugin } from './WriteMessagePlugin.js'
 import { Api } from './index.js';
 
 class DbApi extends Api {
@@ -488,7 +488,7 @@ class DbApi extends Api {
 
     // Use the core plugins
     this.use(DatabasePlugin);
-    this.use(LoggingPlugin);  // Logging added to base API
+    this.use(WriteMessagePlugin);  // WriteMessage added to base API
   }
 }
 
@@ -496,7 +496,7 @@ class DbApi extends Api {
 const api = new DbApi({ name: 'library-api', version: '1.0.0' });
 api.use(GeneratedOnPlugin);  // User adds this plugin
 
-// Even though LoggingPlugin was installed BEFORE GeneratedOnPlugin,
+// Even though WriteMessagePlugin was installed BEFORE GeneratedOnPlugin,
 // the 'beforePlugin' option ensures it logs the original record
 ```
 
@@ -511,7 +511,7 @@ Only one placement option can be used per hook.
 
 ### Example: Using beforeFunction/afterFunction
 
-The `beforeFunction` and `afterFunction` options let you target specific hook functions by name, which is useful when multiple plugins might have the same plugin name or when you need fine-grained control:
+The `beforeFunction` and `afterFunction` options let you target specific hook functions by name, which is useful when you need fine-grained control:
 
 ```javascript
 // ValidationPlugin with multiple hooks
@@ -562,6 +562,10 @@ api.use(SanitizationPlugin);
 
 This example shows why `beforeFunction`/`afterFunction` are useful: they let you insert hooks at specific points within a plugin's hook chain, not just before or after the entire plugin.
 
+Please note that plugin order still matters in the sense that hook ordering is established at adding time.
+This means that a plugin can only place hooks before others, but only relative to the plugins already installed.
+This is how the API is meant to work. 
+
 ### Hook Execution Control
 
 Hooks can return `false` to stop the execution of remaining hooks in the chain.
@@ -569,8 +573,6 @@ Hooks can return `false` to stop the execution of remaining hooks in the chain.
 ## Logging
 
 The API includes built-in logging capabilities with customizable log levels, formats, and outputs.
-
-
 
 ### Configuration
 
@@ -587,24 +589,6 @@ const api = new Api({
     colors: true,         // Use ANSI colors (only with 'pretty' format)
     logger: console       // Custom logger object (must have log/error/warn methods)
   }
-});
-```
-
-**Note:** When providing partial logging configuration, always include the `logger` property to avoid issues:
-
-```javascript
-// Good - includes logger
-const api = new Api({
-  name: 'my-api',
-  version: '1.0.0',
-  logging: { level: 'debug', logger: console }
-});
-
-// May cause issues - missing logger
-const api = new Api({
-  name: 'my-api',
-  version: '1.0.0',
-  logging: { level: 'debug' }  // Missing logger property
 });
 ```
 
@@ -680,9 +664,18 @@ You can provide a custom logger implementation:
 
 ```javascript
 const customLogger = {
-  log: (message) => fs.appendFileSync('app.log', message + '\n'),
-  error: (message) => fs.appendFileSync('error.log', message + '\n'),
-  warn: (message) => fs.appendFileSync('warn.log', message + '\n')
+  log: (message, data) => {
+    const logEntry = data ? `${message} ${JSON.stringify(data)}` : message;
+    fs.appendFileSync('app.log', logEntry + '\n');
+  },
+  error: (message, data) => {
+    const logEntry = data ? `${message} ${JSON.stringify(data)}` : message;
+    fs.appendFileSync('error.log', logEntry + '\n');
+  },
+  warn: (message, data) => {
+    const logEntry = data ? `${message} ${JSON.stringify(data)}` : message;
+    fs.appendFileSync('warn.log', logEntry + '\n');
+  }
 };
 
 const api = new Api({
@@ -1083,18 +1076,6 @@ const api = new Api({
   name: 'my-api',
   logging: { level: 'info', logger: customLogger }
 });
-```
-
-### Important Note on Configuration
-
-When providing a partial logging configuration, always include the `logger` property:
-
-```javascript
-// ✓ Correct - always include logger
-logging: { level: 'debug', logger: console }
-
-// ✗ Incorrect - missing logger can cause errors
-logging: { level: 'debug' }
 ```
 
 ## API Registry and Versioning

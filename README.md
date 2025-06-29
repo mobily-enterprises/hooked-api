@@ -311,6 +311,97 @@ Attempting to call a scope directly throws a helpful error:
 api.scopes.users() // Throws: "Direct scope call not supported. Use api.scopes.users.methodName()"
 ```
 
+### Advanced Scope Features
+
+Scopes support several advanced features that make them powerful for organizing your API:
+
+#### Scope-Specific Customization
+
+Each scope can have its own hooks, vars, and helpers that are merged with global ones:
+
+```javascript
+// Global hooks and vars
+api.customize({
+  vars: { timeout: 5000 },
+  helpers: { formatDate: (d) => d.toISOString() },
+  hooks: {
+    beforeSave: ({ context }) => {
+      context.timestamp = new Date();
+    }
+  }
+});
+
+// Scope-specific customization
+api.addScope('users', 
+  { schema: { name: 'string', email: 'string' } },
+  {
+    // These vars override global vars of the same name
+    vars: { timeout: 10000 },  // Users need longer timeout
+    
+    // These helpers are added to global helpers
+    helpers: { 
+      validateEmail: (email) => email.includes('@') 
+    },
+    
+    // These hooks only run for user operations
+    hooks: {
+      beforeSave: ({ context, helpers }) => {
+        if (!helpers.validateEmail(context.record.email)) {
+          throw new Error('Invalid email');
+        }
+      }
+    }
+  }
+);
+
+// Scope methods can override global scope methods
+api.addScope('products', 
+  { schema: { name: 'string', price: 'number' } },
+  {
+    scopeMethods: {
+      // Override the global 'get' method just for products
+      get: async ({ params, scope }) => {
+        const product = await globalGet(params);
+        product.formattedPrice = `$${product.price}`;
+        return product;
+      }
+    }
+  }
+);
+```
+
+#### Direct Scope Access in Hooks
+
+When hooks run in a scope context, they receive the current scope object, allowing direct method calls:
+
+```javascript
+api.customize({
+  scopeMethods: {
+    validate: async ({ params, scopeOptions }) => {
+      // Validation logic based on scope's schema
+      return validateAgainstSchema(params, scopeOptions.schema);
+    },
+    save: async ({ params, scope, runHooks }) => {
+      // Can call other methods on the same scope directly
+      await scope.validate(params);
+      
+      if (await runHooks('beforeSave')) {
+        return await database.save(params);
+      }
+    }
+  },
+  hooks: {
+    beforeSave: async ({ context, scope, scopeName }) => {
+      // The scope parameter lets you call methods on the current scope
+      const isValid = await scope.validate(context.record);
+      
+      console.log(`Validating record for ${scopeName}:`, isValid);
+      return isValid; // Return false to cancel the save
+    }
+  }
+});
+```
+
 ## Scope Aliases
 
 You can create custom aliases for the `scope` property to make your API more domain-specific:
@@ -765,6 +856,9 @@ At different log levels, the library automatically logs:
 - All proxy accesses
 - Internal method resolutions
 - Timing information for all operations
+- Empty hook chains (when no handlers are registered)
+- All `customize()` operations (what methods, hooks, vars, helpers are being added)
+- All plugin installation steps (what each plugin adds during install)
 
 ### Performance Monitoring
 
@@ -1229,7 +1323,7 @@ The API instance exposes these public properties and methods:
 - `api.[aliasName]` - If setScopeAlias was called (e.g., `api.tables` for database APIs)
 - `api.[addScopeAlias]` - If setScopeAlias was called with second parameter (e.g., `api.addTable`)
 - `api.[methodName]()` - Direct calls to defined API methods
-- `api.options` - The API configuration (name, version, etc.)
+- `api.options` - Read-only access to the API configuration (includes name, version, and merged logging config)
 
 ### Static Methods
 

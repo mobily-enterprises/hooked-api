@@ -219,6 +219,11 @@ api.customize({
 
 Here, the data manipulation was delegated to a hook, which added the random field to the returned data.
 
+You don't know how many hooks will be run when you run `runHooks()`. However, `runHooks()` will return `true`
+if _all_ hooks ran, and `false` if the running chain was interrupted.
+
+A hook can interrupt the running chain by returning `false`.
+
 ## Scopes: Organizing Different Types of Data
 
 In many cases it's crucial to have `scopes`; in this case, we will map a scope to a database table.
@@ -572,13 +577,15 @@ Hooks can return `false` to stop the execution of remaining hooks in the chain.
 
 ## Logging
 
-The API includes built-in logging capabilities with customizable log levels, formats, and outputs.
+Hooked API includes a comprehensive logging system that helps you debug API behavior and monitor performance. The logging system is integrated throughout the library and available in all handlers.
 
-### Configuration
+### Configuring Logging
 
-Configure logging when creating an API instance. The defaults are shown below:
+When creating an API instance, you can configure logging through the options. The defaults are shown below:
 
 ```javascript
+import { Api, LogLevel } from './index.js';
+
 const api = new Api({
   name: 'my-api',
   version: '1.0.0',
@@ -590,48 +597,129 @@ const api = new Api({
     logger: console       // Custom logger object (must have log/error/warn methods)
   }
 });
+
+// Using numeric log level
+const api2 = new Api({
+  name: 'my-api-2',
+  version: '1.0.0',
+  logging: {
+    level: LogLevel.DEBUG,  // Using the exported enum
+    logger: console
+  }
+});
+
+// Using string log level
+const api3 = new Api({
+  name: 'my-api-3',
+  version: '1.0.0',
+  logging: {
+    level: 'debug',  // Case-insensitive string
+    logger: console
+  }
+});
 ```
 
 ### Log Levels
 
-Available log levels (from least to most verbose):
-- `error` (0) - Only errors
-- `warn` (1) - Warnings and errors
-- `info` (2) - General information, warnings, and errors (default)
-- `debug` (3) - Detailed debugging information
-- `trace` (4) - Very detailed trace information
+The library supports five log levels, from least to most verbose:
 
-You can also use numeric levels with the `LogLevel` export:
+| Level | Numeric Value | String Value | Description |
+|-------|---------------|--------------|-------------|
+| ERROR | 0 | 'error' | Critical errors only |
+| WARN  | 1 | 'warn'  | Warnings and errors |
+| INFO  | 2 | 'info'  | General information (default) |
+| DEBUG | 3 | 'debug' | Detailed debugging information |
+| TRACE | 4 | 'trace' | Very detailed execution traces |
+
+You can set the log level using either:
+- **Numeric values**: 0-4 (using the exported `LogLevel` enum is recommended)
+- **String values**: 'error', 'warn', 'info', 'debug', 'trace' (case-insensitive)
 
 ```javascript
-import { Api, LogLevel } from './index.js';
+import { LogLevel } from './index.js';
 
-const api = new Api({
-  name: 'my-api',
-  version: '1.0.0',
-  logging: { level: LogLevel.DEBUG }
-});
+// All these are equivalent ways to set DEBUG level:
+logging: { level: LogLevel.DEBUG, logger: console }
+logging: { level: 3, logger: console }
+logging: { level: 'debug', logger: console }
+logging: { level: 'DEBUG', logger: console }
 ```
 
-### Using Logging in Handlers
+Invalid log levels will default to INFO (2), except numbers outside 0-4 which throw a ConfigurationError.
 
-All handlers receive a `log` object with level-specific methods:
+### Using the Logger in Handlers
+
+Every handler receives a `log` object that provides logging methods:
 
 ```javascript
-apiMethods: {
-  getData: async ({ params, log, vars }) => {
-    log.debug('Getting data', { params });
+// In your DbApi implementation
+class DbApi extends Api {
+  constructor() {
+    super({ name: 'db-api', version: '1.0.0' });
     
-    try {
-      const result = await fetchData(params);
-      log.info('Data retrieved successfully', { count: result.length });
-      return result;
-    } catch (error) {
-      log.error('Failed to get data', { error: error.message });
-      throw error;
-    }
+    this.customize({
+      apiMethods: {
+        healthCheck: async ({ log }) => {
+          log.trace('Health check started');
+          
+          try {
+            // Check database connection
+            const result = await db.ping();
+            log.debug('Database ping successful', result);
+            log.info('Health check passed');
+            return { status: 'healthy' };
+          } catch (error) {
+            log.error('Health check failed', error);
+            throw error;
+          }
+        }
+      }
+    });
   }
 }
+```
+
+### Logger Methods
+
+The `log` object provides these methods:
+
+```javascript
+// Inside any handler, hook, or plugin
+async function myHandler({ log, params }) {
+  log('Simple info message');           // Shorthand for log.info()
+  log.error('Error occurred', error);   // Log errors with details
+  log.warn('Deprecation warning');      // Log warnings
+  log.info('Processing request', params); // Log general information
+  log.debug('Detailed state', state);   // Log debugging details
+  log.trace('Method entry/exit');       // Log execution traces
+}
+```
+
+### Logging in Plugins
+
+Plugins can also use logging during installation and in their hooks:
+
+```javascript
+const PerformancePlugin = {
+  name: 'PerformancePlugin',
+  install: ({ addHook, log }) => {
+    log.info('Installing PerformancePlugin');
+    
+    addHook('beforeMethod', 'startTimer', {}, ({ context, log }) => {
+      context.startTime = Date.now();
+      log.trace('Timer started');
+    });
+    
+    addHook('afterMethod', 'logDuration', {}, ({ context, log }) => {
+      const duration = Date.now() - context.startTime;
+      log.debug(`Method completed in ${duration}ms`);
+      
+      if (duration > 1000) {
+        log.warn(`Slow method detected: ${duration}ms`);
+      }
+    });
+  }
+};
 ```
 
 ### Scope-Specific Logging
@@ -656,6 +744,81 @@ api.addScope('users', {
 **JSON format:**
 ```json
 {"level":"INFO","api":"my-api","context":"getData","message":"Data retrieved successfully","data":{"count":42},"timestamp":"2025-06-28T12:00:00.000Z"}
+```
+
+### What Gets Logged Automatically
+
+At different log levels, the library automatically logs:
+
+**INFO level**:
+- API initialization
+- Plugin installations
+- Scope additions
+
+**DEBUG level**:
+- Method calls with parameters
+- Hook executions
+- Configuration changes
+
+**TRACE level**:
+- Detailed execution flow
+- All proxy accesses
+- Internal method resolutions
+- Timing information for all operations
+
+### Performance Monitoring
+
+The library automatically tracks execution time for all operations when using DEBUG or TRACE log levels:
+
+```javascript
+// Enable timing logs
+const api = new Api({
+  name: 'my-api',
+  version: '1.0.0',
+  logging: { level: 'debug', logger: console }
+});
+
+// Example output when calling a method:
+// [DEBUG] [my-api] API method 'getData' called { params: { id: 123 } }
+// [DEBUG] [my-api] API method 'getData' completed { duration: '45ms' }
+
+// Hook execution timing:
+// [DEBUG] [my-api] Running hook 'beforeFetch' { handlerCount: 3 }
+// [DEBUG] [my-api] Hook 'beforeFetch' completed { handlersRun: 3, duration: '12ms' }
+
+// Plugin installation timing:
+// [INFO] [my-api] Installing plugin 'CachePlugin' { options: { ttl: 300 } }
+// [INFO] [my-api] Plugin 'CachePlugin' installed successfully { duration: '8ms' }
+```
+
+This timing information helps you:
+- Identify performance bottlenecks
+- Monitor method execution times
+- Track hook overhead
+- Measure plugin initialization impact
+
+For production environments, consider using a custom logger to send timing metrics to your monitoring system:
+
+```javascript
+const metricsLogger = {
+  log: (message) => {
+    // Parse timing information and send to metrics service
+    if (message.includes('duration:')) {
+      const match = message.match(/duration: '(\d+)ms'/);
+      if (match) {
+        metricsService.recordTiming(match[1]);
+      }
+    }
+  },
+  error: console.error,
+  warn: console.warn
+};
+
+const api = new Api({
+  name: 'my-api',
+  version: '1.0.0',
+  logging: { level: 'info', logger: metricsLogger }
+});
 ```
 
 ### Custom Logger
@@ -685,34 +848,25 @@ const api = new Api({
 });
 ```
 
-To use it:
+Alternatively, you can use the spread operator to handle all arguments:
 
 ```javascript
-const author = await api.scopes.authors.get({id: 10});
-/* Returns:
-  { 
-    id: 10,
-    fullName: "Umberto Eco",
-    generatedOn: 2025-06-28T01:35:40.971Z,
-  } 
-*/
-
-const book = await api.scopes.books.get({id: 20});
-/* Returns: 
-  { 
-    id: 20,
-    title: "The Name Of the Rose",
-    rating: 10,
-    titleAndRating: "The Name Of The Rose 10",
-    generatedOn: 2025-06-28T01:35:40.971Z,
-  } 
-*/
+const customLogger = {
+  error: (...args) => myLoggingService.log('error', ...args),
+  warn: (...args) => myLoggingService.log('warn', ...args),
+  info: (...args) => myLoggingService.log('info', ...args),
+  debug: (...args) => myLoggingService.log('debug', ...args),
+  trace: (...args) => myLoggingService.log('trace', ...args),
+};
 ```
 
-Notice how:
-- The `get` method is defined once in `scopeMethods` and works the same for all scopes
-- The `books` scope uses **hooks** to customize the record. 
-- Each scope returns completely different data structures despite using the same method
+### Best Practices
+
+1. **Production**: Use ERROR or WARN level to minimize overhead
+2. **Development**: Use INFO or DEBUG for helpful insights
+3. **Debugging**: Use TRACE to see complete execution flow
+4. **Custom Logger**: You can provide any logger that implements the console interface
+5. **Sensitive Data**: Be careful not to log sensitive information like passwords or API keys
 
 ## Security
 
@@ -827,256 +981,123 @@ api.scopes[sym] = 'malicious';  // Silently ignored
 console.log(api.scopes[sym]);   // undefined
 ```
 
-### Best Practices
+### Best Practices for API Developers
 
-1. **Always validate user input** before passing to API methods
-2. **Use the built-in validation** - don't bypass it with direct property assignment
-3. **Check error types** when catching errors to handle security issues appropriately:
+When building APIs with hooked-api, follow these security best practices:
+
+1. **Validate all parameters in your API methods** - Never trust input from API consumers:
    ```javascript
-   try {
-     api.addScope(userInput, {});
-   } catch (error) {
-     if (error instanceof ValidationError) {
-       // Handle invalid input safely
-       console.error(`Invalid scope name: ${error.message}`);
+   apiMethods: {
+     updateUser: async ({ params }) => {
+       // Validate before using
+       if (!params.id || typeof params.id !== 'number') {
+         throw new Error('Invalid user ID');
+       }
+       if (params.email && !isValidEmail(params.email)) {
+         throw new Error('Invalid email format');
+       }
+       // Now safe to use params
      }
    }
    ```
-4. **Review plugins** before installation - they have access to the full API context
-5. **Use logging** at appropriate levels to monitor for suspicious activity without exposing sensitive data
 
+2. **Carefully review third-party plugins** - Plugins have full access to your API:
+   - Check what hooks they add
+   - Review what data they access
+   - Ensure they don't expose sensitive operations
+   - Consider the plugin's source and maintenance status
 
-## Logging
+3. **Sanitize data in hooks** - Hooks can modify shared context:
+   ```javascript
+   hooks: {
+     beforeSave: ({ context }) => {
+       // Sanitize any HTML/scripts from user content
+       context.record.description = sanitizeHtml(context.record.description);
+       // Remove any unexpected fields
+       delete context.record.internalField;
+     }
+   }
+   ```
 
-Hooked API includes a comprehensive logging system that helps you debug API behavior and monitor performance. The logging system is integrated throughout the library and available in all handlers.
+4. **Implement authentication and authorization** - The library doesn't provide this:
+   ```javascript
+   apiMethods: {
+     deleteUser: async ({ params, vars }) => {
+       // Check authentication
+       if (!vars.currentUser) {
+         throw new Error('Authentication required');
+       }
+       // Check authorization
+       if (!vars.currentUser.isAdmin) {
+         throw new Error('Admin access required');
+       }
+       // Proceed with deletion
+     }
+   }
+   ```
 
-### Configuring Logging
+5. **Use logging for security monitoring** - Track suspicious activities:
+   ```javascript
+   apiMethods: {
+     login: async ({ params, log }) => {
+       const result = await authenticate(params);
+       if (!result.success) {
+         log.warn('Failed login attempt', { 
+           username: params.username,
+           ip: params.clientIp,
+           timestamp: new Date()
+         });
+       }
+       return result;
+     }
+   }
+   ```
 
-When creating an API instance, you can configure logging through the options:
+6. **Handle errors carefully** - Don't expose internal details:
+   ```javascript
+   apiMethods: {
+     getData: async ({ params }) => {
+       try {
+         return await internalDatabaseQuery(params);
+       } catch (error) {
+         // Log the full error internally
+         log.error('Database query failed', error);
+         // Return sanitized error to API consumer
+         throw new Error('Unable to retrieve data');
+       }
+     }
+   }
+   ```
 
-```javascript
-import { Api, LogLevel } from './index.js';
+7. **Protect sensitive operations in helpers** - Don't expose dangerous functions:
+   ```javascript
+   helpers: {
+     // DON'T expose direct database access
+     // db: database,  // ❌ Bad
+     
+     // DO create safe, limited helpers
+     findUserByEmail: async (email) => {  // ✓ Good
+       // Only returns public user data
+       const user = await database.findUser({ email });
+       return { id: user.id, name: user.name };
+     }
+   }
+   ```
 
-// Using numeric log level
-const api = new Api({
-  name: 'my-api',
-  version: '1.0.0',
-  logging: {
-    level: LogLevel.DEBUG,  // Using the exported enum
-    logger: console
-  }
-});
-
-// Using string log level
-const api2 = new Api({
-  name: 'my-api-2',
-  version: '1.0.0',
-  logging: {
-    level: 'debug',  // Case-insensitive string
-    logger: console
-  }
-});
-```
-
-### Log Levels
-
-The library supports five log levels, from least to most verbose:
-
-| Level | Numeric Value | String Value | Description |
-|-------|---------------|--------------|-------------|
-| ERROR | 0 | 'error' | Critical errors only |
-| WARN  | 1 | 'warn'  | Warnings and errors |
-| INFO  | 2 | 'info'  | General information (default) |
-| DEBUG | 3 | 'debug' | Detailed debugging information |
-| TRACE | 4 | 'trace' | Very detailed execution traces |
-
-You can set the log level using either:
-- **Numeric values**: 0-4 (using the exported `LogLevel` enum is recommended)
-- **String values**: 'error', 'warn', 'info', 'debug', 'trace' (case-insensitive)
-
-```javascript
-import { LogLevel } from './index.js';
-
-// All these are equivalent ways to set DEBUG level:
-logging: { level: LogLevel.DEBUG, logger: console }
-logging: { level: 3, logger: console }
-logging: { level: 'debug', logger: console }
-logging: { level: 'DEBUG', logger: console }
-```
-
-Invalid log levels will default to INFO (2), except numbers outside 0-4 which throw a ConfigurationError.
-
-### Using the Logger in Handlers
-
-Every handler receives a `log` object that provides logging methods:
-
-```javascript
-// In your DbApi implementation
-class DbApi extends Api {
-  constructor() {
-    super({ name: 'db-api', version: '1.0.0' });
-    
-    this.customize({
-      apiMethods: {
-        healthCheck: async ({ log }) => {
-          log.trace('Health check started');
-          
-          try {
-            // Check database connection
-            const result = await db.ping();
-            log.debug('Database ping successful', result);
-            log.info('Health check passed');
-            return { status: 'healthy' };
-          } catch (error) {
-            log.error('Health check failed', error);
-            throw error;
-          }
-        }
-      }
-    });
-  }
-}
-```
-
-### Logger Methods
-
-The `log` object provides these methods:
-
-```javascript
-// Inside any handler, hook, or plugin
-async function myHandler({ log, params }) {
-  log('Simple info message');           // Shorthand for log.info()
-  log.error('Error occurred', error);   // Log errors with details
-  log.warn('Deprecation warning');      // Log warnings
-  log.info('Processing request', params); // Log general information
-  log.debug('Detailed state', state);   // Log debugging details
-  log.trace('Method entry/exit');       // Log execution traces
-}
-```
-
-### Logging in Plugins
-
-Plugins can also use logging during installation and in their hooks:
-
-```javascript
-const PerformancePlugin = {
-  name: 'PerformancePlugin',
-  install: ({ addHook, log }) => {
-    log.info('Installing PerformancePlugin');
-    
-    addHook('beforeMethod', 'startTimer', {}, ({ context, log }) => {
-      context.startTime = Date.now();
-      log.trace('Timer started');
-    });
-    
-    addHook('afterMethod', 'logDuration', {}, ({ context, log }) => {
-      const duration = Date.now() - context.startTime;
-      log.debug(`Method completed in ${duration}ms`);
-      
-      if (duration > 1000) {
-        log.warn(`Slow method detected: ${duration}ms`);
-      }
-    });
-  }
-};
-```
-
-### What Gets Logged Automatically
-
-At different log levels, the library automatically logs:
-
-**INFO level**:
-- API initialization
-- Plugin installations
-- Scope additions
-
-**DEBUG level**:
-- Method calls with parameters
-- Hook executions
-- Configuration changes
-
-**TRACE level**:
-- Detailed execution flow
-- All proxy accesses
-- Internal method resolutions
-- Timing information for all operations
-
-### Performance Monitoring
-
-The library automatically tracks execution time for all operations when using DEBUG or TRACE log levels:
-
-```javascript
-// Enable timing logs
-const api = new Api({
-  name: 'my-api',
-  version: '1.0.0',
-  logging: { level: 'debug', logger: console }
-});
-
-// Example output when calling a method:
-// [DEBUG] [my-api] API method 'getData' called { params: { id: 123 } }
-// [DEBUG] [my-api] API method 'getData' completed { duration: '45ms' }
-
-// Hook execution timing:
-// [DEBUG] [my-api] Running hook 'beforeFetch' { handlerCount: 3 }
-// [DEBUG] [my-api] Hook 'beforeFetch' completed { handlersRun: 3, duration: '12ms' }
-
-// Plugin installation timing:
-// [INFO] [my-api] Installing plugin 'CachePlugin' { options: { ttl: 300 } }
-// [INFO] [my-api] Plugin 'CachePlugin' installed successfully { duration: '8ms' }
-```
-
-This timing information helps you:
-- Identify performance bottlenecks
-- Monitor method execution times
-- Track hook overhead
-- Measure plugin initialization impact
-
-For production environments, consider using a custom logger to send timing metrics to your monitoring system:
-
-```javascript
-const metricsLogger = {
-  log: (message) => {
-    // Parse timing information and send to metrics service
-    if (message.includes('duration:')) {
-      const match = message.match(/duration: '(\d+)ms'/);
-      if (match) {
-        metricsService.recordTiming(match[1]);
-      }
-    }
-  },
-  error: console.error,
-  warn: console.warn
-};
-
-const api = new Api({
-  name: 'my-api',
-  version: '1.0.0',
-  logging: { level: 'info', logger: metricsLogger }
-});
-```
-
-### Best Practices
-
-1. **Production**: Use ERROR or WARN level to minimize overhead
-2. **Development**: Use INFO or DEBUG for helpful insights
-3. **Debugging**: Use TRACE to see complete execution flow
-4. **Custom Logger**: You can provide any logger that implements the console interface:
-
-```javascript
-const customLogger = {
-  error: (...args) => myLoggingService.log('error', ...args),
-  warn: (...args) => myLoggingService.log('warn', ...args),
-  info: (...args) => myLoggingService.log('info', ...args),
-  debug: (...args) => myLoggingService.log('debug', ...args),
-  trace: (...args) => myLoggingService.log('trace', ...args),
-};
-
-const api = new Api({
-  name: 'my-api',
-  logging: { level: 'info', logger: customLogger }
-});
-```
+8. **Consider rate limiting** - Implement in your API methods:
+   ```javascript
+   apiMethods: {
+     search: async ({ params, vars }) => {
+       // Simple rate limit check
+       const key = `search:${vars.clientId}`;
+       const count = await rateLimiter.increment(key);
+       if (count > 100) {
+         throw new Error('Rate limit exceeded');
+       }
+       return await performSearch(params);
+     }
+   }
+   ```
 
 ## API Registry and Versioning
 
@@ -1610,62 +1631,3 @@ try {
   }
 }
 ```
-
-## Undocumented Features
-
-### 2. Advanced Customize Options
-The `customize()` method can accept hooks as objects with additional properties:
-```javascript
-{
-  hooks: {
-    myHook: {
-      handler: async () => {},
-      functionName: 'customName',
-      beforePlugin: 'other-plugin'
-    }
-  }
-}
-```
-
-
-### 5. Scope-Specific Features
-- **Scope-specific methods**: Can override global scope methods
-- **Scope-specific vars/helpers**: Merged with global ones (scope takes precedence)
-- **Scope-specific hooks**: Only run when methods are called on that scope
-
-
-### 5. Internal Method Access
-When adding methods or using customize, the library logs detailed trace information about what's being added (visible at trace log level).
-
-
-### 6. Empty Hook Chains
-The system handles empty hook chains gracefully with trace logging.
-
-### 7. Customize After Construction
-Use the customize() method to add functionality after creating the API instance:
-```javascript
-const api = new Api(options);
-
-api.customize({
-  apiMethods: {},
-  scopeMethods: {},
-  hooks: {},
-  vars: {},
-  helpers: {}
-});
-```
-
-### 8. Plugin Install Context Details
-- `addHook` in plugins automatically injects the plugin name
-- All add* methods in plugin context include trace logging
-- Plugin context methods are bound to maintain proper `this` context
-
-### 9. Logging Configuration Merge Behavior
-When providing partial logging configuration, the library merges with defaults, but missing `logger` can cause issues (documented as a warning, but the full merge behavior isn't explained).
-
-### 10. Hook Handler Full Signature
-Hook handlers in scope context receive the scope object at `handlerParams.scope`, allowing direct method calls on the current scope.
-
-### 11. API Options Access
-The `api.options` property provides read access to the full configuration, including the merged logging configuration.
-

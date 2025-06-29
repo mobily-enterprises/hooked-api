@@ -136,7 +136,7 @@ const user = await api.scopes.users.get({ id: 123 });
 ## Ready to Get Started?
 
 <div style="text-align: center; margin: 3em 0;">
-  <a href="./README.html" style="display: inline-block; background: #28a745; color: white; padding: 1em 2em; text-decoration: none; border-radius: 6px; font-size: 1.1em;">
+  <a href="{{ './README.html' | relative_url }}" style="display: inline-block; background: #28a745; color: white; padding: 1em 2em; text-decoration: none; border-radius: 6px; font-size: 1.1em;">
     📚 Start with the Documentation
   </a>
 </div>
@@ -144,17 +144,17 @@ const user = await api.scopes.users.get({ id: 123 });
 ## Documentation
 
 <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1em; margin: 2em 0;">
-  <a href="./README.html" style="display: block; background: #f5f5f5; padding: 1.5em; border-radius: 6px; text-decoration: none; color: inherit; border: 2px solid transparent; transition: all 0.2s;">
+  <a href="{{ './README.html' | relative_url }}" style="display: block; background: #f5f5f5; padding: 1.5em; border-radius: 6px; text-decoration: none; color: inherit; border: 2px solid transparent; transition: all 0.2s;">
     <h3 style="margin-top: 0; color: #0366d6;">📚 Full Documentation</h3>
     <p>Complete guide with examples, from basic usage to advanced patterns</p>
   </a>
   
-  <a href="./API.html" style="display: block; background: #f5f5f5; padding: 1.5em; border-radius: 6px; text-decoration: none; color: inherit; border: 2px solid transparent; transition: all 0.2s;">
+  <a href="{{ './API.html' | relative_url }}" style="display: block; background: #f5f5f5; padding: 1.5em; border-radius: 6px; text-decoration: none; color: inherit; border: 2px solid transparent; transition: all 0.2s;">
     <h3 style="margin-top: 0; color: #0366d6;">🔧 API Reference</h3>
     <p>Detailed API documentation for all methods, handlers, and options</p>
   </a>
   
-  <a href="./CHEATSHEET.html" style="display: block; background: #f5f5f5; padding: 1.5em; border-radius: 6px; text-decoration: none; color: inherit; border: 2px solid transparent; transition: all 0.2s;">
+  <a href="{{ './CHEATSHEET.html' | relative_url }}" style="display: block; background: #f5f5f5; padding: 1.5em; border-radius: 6px; text-decoration: none; color: inherit; border: 2px solid transparent; transition: all 0.2s;">
     <h3 style="margin-top: 0; color: #0366d6;">⚡ Cheatsheet</h3>
     <p>Quick recipes and code snippets for common tasks</p>
   </a>

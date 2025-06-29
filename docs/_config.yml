@@ -2,7 +2,7 @@
 title: Hooked API
 description: Build extensible APIs with hooks, plugins, and scopes
 theme: jekyll-theme-cayman
-baseurl: "/json-rest-api2"
+baseurl: "/hooked-api"
 url: "https://mobily-enterprises.github.io"
 
 # Exclude files from processing
@@ -13,6 +13,6 @@ exclude:
 
 # GitHub repository information (update with your actual repo)
 github:
-  repository_url: https://github.com/mobily-enterprises/json-rest-api2
+  repository_url: https://github.com/mobily-enterprises/hooked-api
   owner_name: mobily-enterprises
-  repository_name: json-rest-api2
+  repository_name: hooked-api

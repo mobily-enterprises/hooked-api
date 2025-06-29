@@ -46,7 +46,7 @@ open_browser() {
 echo -e "${BLUE}Starting Jekyll server...${NC}"
 
 # Open browser in background after server starts
-open_browser "http://127.0.0.1:4000" &
+open_browser "http://127.0.0.1:4000/hooked-api/" &
 
 # Start Jekyll server (this will run in foreground)
 cd docs && bundle exec jekyll serve

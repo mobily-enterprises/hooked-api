@@ -6,7 +6,7 @@ lifecycle of a call.
 
 ## Documentation
 
-📖 **[View the official documentation site](https://mobily-enterprises.github.io/hooked-api/)** for the best reading experience.
+📖 **[View the official documentation site](https://mobily-enterprises.github.io/json-rest-api2/)** for the best reading experience.
 
 Or browse the docs here on GitHub:
 - 📚 **[Full Documentation](./README.md)** - You're here!

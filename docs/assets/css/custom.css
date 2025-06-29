@@ -102,17 +102,19 @@
 /* Enhanced header */
 .page-header {
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  padding: 2.5rem 2rem;
+  padding: 1.5rem 2rem;
 }
 
 .project-name {
   font-weight: 700;
   letter-spacing: -1px;
+  margin-bottom: 0.5rem;
 }
 
 .project-tagline {
   opacity: 0.95;
-  font-size: 1.35rem;
+  font-size: 1.25rem;
+  margin-bottom: 0;
 }
 
 /* Better buttons */
@@ -225,15 +227,16 @@ blockquote em {
 /* Responsive adjustments */
 @media screen and (max-width: 768px) {
   .page-header {
-    padding: 2rem 1rem;
+    padding: 1.25rem 1rem;
   }
   
   .project-name {
-    font-size: 2rem;
+    font-size: 1.75rem;
+    margin-bottom: 0.3rem;
   }
   
   .project-tagline {
-    font-size: 1.1rem;
+    font-size: 1rem;
   }
   
   .btn {

@@ -1,0 +1,18 @@
+# Jekyll configuration for hooked-api GitHub Pages site
+title: Hooked API
+description: Build extensible APIs with hooks, plugins, and scopes
+theme: jekyll-theme-cayman
+baseurl: ""
+url: ""
+
+# Exclude files from processing
+exclude:
+  - Gemfile
+  - Gemfile.lock
+  - vendor/
+
+# GitHub repository information (update with your actual repo)
+github:
+  repository_url: https://github.com/mobily-enterprises/hooked-api
+  owner_name: mobily-enterprises
+  repository_name: hooked-api

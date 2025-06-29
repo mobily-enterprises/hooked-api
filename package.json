@@ -8,7 +8,11 @@
   },
   "scripts": {
     "test": "node --test tests/*.test.js",
-    "test:comprehensive": "node --test tests/comprehensive-*.test.js"
+    "test:comprehensive": "node --test tests/comprehensive-*.test.js",
+    "docs:build": "./scripts/build-docs.sh",
+    "docs:serve": "./scripts/serve-docs.sh",
+    "docs": "npm run docs:build && npm run docs:serve",
+    "prepublishOnly": "npm run docs:build"
   },
   "author": "",
   "license": "ISC",

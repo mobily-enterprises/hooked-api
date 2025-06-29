@@ -1,3 +1,11 @@
+---
+layout: default
+title: Hooked API Documentation
+permalink: /README.html
+---
+
+[← Back to Home](./)
+
 # Hooked API
 
 Hooked API allows you to create API calls that can be extended with hooks and variables.

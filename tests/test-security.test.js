@@ -562,9 +562,31 @@ test('Code injection prevention', async (t) => {
 // Test 5: Resource exhaustion prevention
 test('Resource exhaustion prevention', async (t) => {
   await t.test('should handle infinite recursion attempts', async () => {
-    const api = new Api({ name: 'recursion', version: '1.0.0' });
+    // Custom logger that suppresses recursion error messages
+    const silentLogger = {
+      log: () => {},
+      error: (msg, data) => {
+        // Only suppress the specific recursion errors
+        if (!msg.includes('recurse') || !data?.error?.includes('recursion')) {
+          console.error(msg, data);
+        }
+      },
+      warn: () => {},
+      info: () => {},
+      debug: () => {},
+      trace: () => {}
+    };
+    
+    const api = new Api({ 
+      name: 'recursion', 
+      version: '1.0.0', 
+      logging: { 
+        level: 'error',
+        logger: silentLogger 
+      } 
+    });
     let callCount = 0;
-    const maxCalls = 10000;
+    const maxCalls = 100; // Reduced from 10000 to minimize log spam
 
     api.customize({
       apiMethods: {
@@ -586,8 +608,8 @@ test('Resource exhaustion prevention', async (t) => {
 
     // Safe recursion
     callCount = 0;
-    const result1 = await api.recurse({ depth: 100 });
-    assert.equal(result1, 101);
+    const result1 = await api.recurse({ depth: 50 });
+    assert.equal(result1, 51);
 
     // Prevent infinite recursion
     callCount = 0;

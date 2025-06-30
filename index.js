@@ -1,11 +1,49 @@
+/**
+ * Hooked API - A flexible API framework with hooks, plugins, and scopes
+ * 
+ * This library enables creation of extensible APIs where:
+ * - Plugins can hook into any part of the API lifecycle
+ * - Methods can be organized into logical scopes (like database tables)
+ * - Every aspect can be customized and extended by users
+ * 
+ * Architecture overview:
+ * - Api class: Main entry point, manages plugins, scopes, and methods
+ * - Plugins: Reusable modules that extend API functionality
+ * - Scopes: Logical groupings of methods (e.g., api.scopes.users.create())
+ * - Hooks: Intercept points in method execution for customization
+ * - Registry: Global storage for API instances with version management
+ */
+
 import semver from 'semver'
 
+/**
+ * Global registry stores all API instances by name
+ * Enables cross-API communication and version management
+ * Example: Api.registry.get('my-api') retrieves an API instance
+ */
 let globalRegistry = new Map()
+
+/**
+ * Validation patterns and security constants
+ * These protect against code injection and ensure safe property names
+ */
 const VALID_JS_IDENTIFIER = /^[a-zA-Z_$][a-zA-Z0-9_$]*$/
 const DANGEROUS_PROPS = ['__proto__', 'constructor', 'prototype']
 const isDangerousProp = (prop) => DANGEROUS_PROPS.includes(prop)
 
-// Logging levels
+/**
+ * Logging system configuration
+ * 
+ * The logging system is hierarchical - each level includes all lower levels:
+ * - ERROR: Only critical errors that require immediate attention
+ * - WARN: Warnings about potential issues
+ * - INFO: General informational messages (default level)
+ * - DEBUG: Detailed debugging information
+ * - TRACE: Very detailed execution traces
+ * 
+ * Used throughout the system to provide insight into API operations,
+ * hook execution, plugin loading, and method calls
+ */
 export const LogLevel = {
   ERROR: 0,
   WARN: 1,
@@ -14,6 +52,10 @@ export const LogLevel = {
   TRACE: 4
 }
 
+/**
+ * Mapping between numeric levels and their string names
+ * Used for displaying human-readable log level names
+ */
 const LOG_LEVEL_NAMES = {
   0: 'ERROR',
   1: 'WARN',
@@ -22,6 +64,10 @@ const LOG_LEVEL_NAMES = {
   4: 'TRACE'
 }
 
+/**
+ * Mapping from string names to numeric levels
+ * Allows users to configure logging with strings like 'debug' or 'error'
+ */
 const LOG_LEVEL_VALUES = {
   'error': 0,
   'warn': 1,
@@ -30,7 +76,11 @@ const LOG_LEVEL_VALUES = {
   'trace': 4
 }
 
-// ANSI color codes for pretty logging
+/**
+ * ANSI color codes for terminal output
+ * Makes logs more readable by color-coding different log levels
+ * Can be disabled by setting environment variables or using custom loggers
+ */
 const COLORS = {
   reset: '\x1b[0m',
   bright: '\x1b[1m',
@@ -43,6 +93,10 @@ const COLORS = {
   gray: '\x1b[90m'
 }
 
+/**
+ * Maps log levels to their display colors
+ * ERROR=red, WARN=yellow, etc. for quick visual identification
+ */
 const LOG_COLORS = {
   ERROR: COLORS.red,
   WARN: COLORS.yellow,
@@ -51,7 +105,20 @@ const LOG_COLORS = {
   TRACE: COLORS.gray
 }
 
-// Custom error classes for better error categorization
+/**
+ * Custom error hierarchy for precise error handling
+ * 
+ * All Hooked API errors extend from HookedApiError, allowing:
+ * - Catch all library errors with `catch (e instanceof HookedApiError)`
+ * - Specific error handling based on error type
+ * - Rich error context with additional properties
+ * - Consistent error codes for programmatic handling
+ */
+
+/**
+ * Base error class for all Hooked API errors
+ * Provides consistent error structure with name, message, code, and stack trace
+ */
 export class HookedApiError extends Error {
   constructor(message, code = 'HOOKED_API_ERROR') {
     super(message);
@@ -61,6 +128,17 @@ export class HookedApiError extends Error {
   }
 }
 
+/**
+ * Thrown when API configuration is invalid
+ * 
+ * Common scenarios:
+ * - Invalid API name or version format
+ * - Missing required configuration options
+ * - Type mismatches in configuration objects
+ * 
+ * Provides 'received', 'expected', and 'example' properties to help
+ * developers quickly identify and fix configuration issues
+ */
 export class ConfigurationError extends HookedApiError {
   constructor(message, { received, expected, example } = {}) {
     super(message, 'CONFIGURATION_ERROR');
@@ -70,6 +148,17 @@ export class ConfigurationError extends HookedApiError {
   }
 }
 
+/**
+ * Thrown when input validation fails
+ * 
+ * Used throughout the system to validate:
+ * - Method names (must be valid JavaScript identifiers)
+ * - Scope names (cannot use dangerous properties)
+ * - Hook names and placements
+ * - Parameter types and values
+ * 
+ * Includes the invalid field, value, and list of valid values when applicable
+ */
 export class ValidationError extends HookedApiError {
   constructor(message, { field, value, validValues } = {}) {
     super(message, 'VALIDATION_ERROR');
@@ -79,6 +168,17 @@ export class ValidationError extends HookedApiError {
   }
 }
 
+/**
+ * Thrown when plugin operations fail
+ * 
+ * Common causes:
+ * - Missing plugin dependencies
+ * - Duplicate plugin names
+ * - Invalid plugin structure (missing name or install function)
+ * - Plugin installation errors
+ * 
+ * Provides context about which plugin failed and what plugins are installed
+ */
 export class PluginError extends HookedApiError {
   constructor(message, { pluginName, installedPlugins } = {}) {
     super(message, 'PLUGIN_ERROR');
@@ -87,6 +187,16 @@ export class PluginError extends HookedApiError {
   }
 }
 
+/**
+ * Thrown when scope operations fail
+ * 
+ * Typical scenarios:
+ * - Accessing a scope that doesn't exist
+ * - Creating a scope with an invalid name
+ * - Scope method execution failures
+ * 
+ * Lists available scopes to help developers identify typos or missing scopes
+ */
 export class ScopeError extends HookedApiError {
   constructor(message, { scopeName, availableScopes } = {}) {
     super(message, 'SCOPE_ERROR');
@@ -95,6 +205,16 @@ export class ScopeError extends HookedApiError {
   }
 }
 
+/**
+ * Thrown when method operations fail
+ * 
+ * Common issues:
+ * - Calling a method that doesn't exist
+ * - Method execution errors
+ * - Invalid method names during creation
+ * 
+ * Includes suggestions for fixing the error when possible
+ */
 export class MethodError extends HookedApiError {
   constructor(message, { methodName, suggestion } = {}) {
     super(message, 'METHOD_ERROR');
@@ -103,9 +223,45 @@ export class MethodError extends HookedApiError {
   }
 }
 
+/**
+ * Main API class - the entry point for creating extensible APIs
+ * 
+ * The Api class orchestrates the entire system:
+ * - Manages plugins and their lifecycle
+ * - Organizes methods into scopes
+ * - Handles hook registration and execution
+ * - Provides logging and error handling
+ * - Maintains state through vars and helpers
+ * 
+ * Usage:
+ * ```javascript
+ * const api = new Api({ name: 'my-api', version: '1.0.0' });
+ * api.customize({ ... });  // Add methods, hooks, vars
+ * api.use(plugin);         // Install plugins
+ * api.addScope('users');   // Create scopes
+ * ```
+ */
 export class Api {
+  /**
+   * Creates a new API instance
+   * 
+   * @param {Object} options - Configuration options
+   * @param {string} options.name - Unique name for this API (required)
+   * @param {string} options.version - Semantic version (default: '1.0.0')
+   * @param {Object} options.logging - Logging configuration
+   * 
+   * The constructor:
+   * 1. Validates configuration (name and version)
+   * 2. Sets up internal state management
+   * 3. Initializes the logging system
+   * 4. Registers the API in the global registry
+   * 5. Sets up proxy for scope access (api.scopes.xxx)
+   */
   constructor(options = {}) {
-    // Default logging configuration
+    /**
+     * Default logging configuration
+     * Can be overridden via options.logging
+     */
     const defaultLogging = {
       level: 'info',
       format: 'pretty',
@@ -114,15 +270,29 @@ export class Api {
       logger: console
     };
     
+    /**
+     * Merge user options with defaults
+     * Ensures all required options are present
+     */
     this.options = {
       name: null,
       version: '1.0.0',
       ...options
     }
     
-    // Properly merge logging options
+    /**
+     * Deep merge logging options to preserve defaults
+     * while allowing partial overrides
+     */
     this.options.logging = { ...defaultLogging, ...(options.logging || {}) }
 
+    /**
+     * Validate API name - required for registry and identification
+     * The name is used to:
+     * - Register the API globally
+     * - Generate plugin names
+     * - Create meaningful error messages
+     */
     if (typeof this.options.name !== 'string' || this.options.name.trim() === '') {
       const received = this.options.name === undefined ? 'undefined' : 
                       this.options.name === null ? 'null' : 
@@ -137,6 +307,13 @@ export class Api {
         }
       );
     }
+    /**
+     * Validate version format using semver
+     * Semantic versioning enables:
+     * - Version compatibility checks
+     * - Registry version management
+     * - Plugin dependency resolution
+     */
     if (!semver.valid(this.options.version)) {
       const versionType = typeof this.options.version;
       const suggestion = versionType === 'string' ? 
@@ -152,21 +329,52 @@ export class Api {
       );
     }
 
-    // All internal state with underscore prefix
+    /**
+     * Initialize internal state management
+     * All internal properties use underscore prefix to:
+     * - Avoid conflicts with user-defined properties
+     * - Clearly separate internal vs public API
+     * - Enable proxy-based access control
+     */
+    
+    /** Hook storage: Map<hookName, Array<{plugin, name, priority, handler}>> */
     this._hooks = new Map()
+    
+    /** Variable storage for shared state across methods */
     this._vars = new Map()
+    
+    /** Helper function storage for reusable logic */
     this._helpers = new Map()
+    
+    /** API-level methods (e.g., api.create(), api.update()) */
     this._apiMethods = new Map()
+    
+    /** Scope-level method templates (applied to all scopes) */
     this._scopeMethods = new Map()
+    
+    /** Track installed plugins to prevent duplicates */
     this._installedPlugins = new Set()
+    
+    /** Scope instances with their own vars, helpers, and methods */
     this._scopes = new Map()
-    // Store API options (will be frozen when building contexts)
+    
+    /** Frozen copy of API options for secure context passing */
     this._apiOptions = { ...this.options }
-    this._pluginOptions = {} // Mutable object for plugin options
-    this._scopeAlias = null // Track the scope alias if set
-    this._addScopeAlias = null // Track the addScope alias if set
+    
+    /** Mutable plugin options that plugins can modify */
+    this._pluginOptions = {}
+    
+    /** Custom scope property name (e.g., 'tables' instead of 'scopes') */
+    this._scopeAlias = null
+    
+    /** Custom addScope method name (e.g., 'addTable' instead of 'addScope') */
+    this._addScopeAlias = null
    
-    // Initialize logger
+    /**
+     * Initialize the logging system
+     * Supports both string ('debug', 'info') and numeric (0-4) log levels
+     * Falls back to INFO level if invalid
+     */
     let logLevel;
     if (typeof this.options.logging.level === 'string') {
       logLevel = LOG_LEVEL_VALUES[this.options.logging.level.toLowerCase()];
@@ -193,7 +401,15 @@ export class Api {
     this._logLevel = logLevel;
     this._logger = this._createLogger()
     
-    // Create proxy objects for vars and helpers (only for internal use)
+    /**
+     * Create secure proxy objects for vars and helpers
+     * 
+     * These proxies:
+     * - Provide object-like access to Map storage (vars.myVar instead of vars.get('myVar'))
+     * - Prevent prototype pollution by filtering dangerous properties
+     * - Are used internally when building method contexts
+     * - Enable clean, intuitive API for plugins and methods
+     */
     this._varsProxy = new Proxy({}, {
       get: (target, prop) => this._vars.get(prop),
       set: (target, prop, value) => {
@@ -217,7 +433,20 @@ export class Api {
       }
     })
     
-    // Create proxy for api.scopes.scopeName.methodName() syntax
+    /**
+     * Create the main scopes proxy for intuitive API access
+     * 
+     * This enables the elegant syntax: api.scopes.users.create()
+     * The proxy chain works as follows:
+     * 1. api.scopes[scopeName] returns a scope proxy
+     * 2. scope[methodName] returns the bound method
+     * 3. method(params) executes with full context
+     * 
+     * Security features:
+     * - Filters out symbols and dangerous properties
+     * - Returns undefined for non-existent scopes
+     * - Provides helpful error messages for misuse
+     */
     this.scopes = new Proxy({}, {
       get: (target, scopeName) => {
         // Prevent prototype pollution and symbol-based bypasses
@@ -227,7 +456,11 @@ export class Api {
         
         if (!this._scopes.has(scopeName)) return undefined;
         
-        // Return another proxy for the methods
+        /**
+         * Return a scope proxy that handles method access
+         * The function wrapper provides a helpful error if someone
+         * tries to call the scope directly: api.scopes.users()
+         */
         return new Proxy((...args) => {
           throw new MethodError(
             `Direct scope call not supported. Use api.scopes.${scopeName}.methodName() instead`,
@@ -238,7 +471,11 @@ export class Api {
           );
         }, {
           get: (target, prop) => {
-            // Only non-numeric string props, so that scope.users[123] returns undefined
+            /**
+             * Handle method access on a scope
+             * Filters numeric properties to prevent array-like access
+             * Prioritizes scope-specific methods over global scope methods
+             */
             if (typeof prop === 'string' && !prop.match(/^\d+$/)) {
               const scopeConfig = this._scopes.get(scopeName);
               if (!scopeConfig) {
@@ -251,46 +488,76 @@ export class Api {
                 return undefined; // No method found
               }
               
+              /**
+               * Return the bound method function
+               * This function executes when the user calls api.scopes.users.create()
+               * It sets up the execution context and handles the entire method lifecycle
+               */
               return async (params = {}) => {
                 const startTime = Date.now();
                 const methodContext = `${scopeName}.${prop}`;
                 
                 this._logger.debug(`Scope method '${prop}' called on '${scopeName}'`, { params });
                 
-                // Create a mutable context for this method call
+                /**
+                 * Create a fresh context object for this method call
+                 * This context is passed through hooks and to the method handler
+                 * Allows data sharing between hooks and methods
+                 */
                 const context = {};
                 
-                // Get the scope-aware context
+                /**
+                 * Build a scope-aware context that includes:
+                 * - Merged vars (global + scope-specific)
+                 * - Merged helpers (global + scope-specific)
+                 * - Scope-specific options and metadata
+                 */
                 const scopeContext = this._buildScopeContext(scopeName);
                 
+                /**
+                 * Prepare the complete parameter object for the method handler
+                 * This provides everything a method needs to execute:
+                 * - User inputs (params, context)
+                 * - Data access (vars, helpers, scopes)
+                 * - Capabilities (runHooks, log)
+                 * - Metadata (names, options)
+                 */
                 const handlerParams = { 
                   // User data
-                  params,
-                  context,
+                  params,           // Method parameters from the caller
+                  context,          // Mutable context for hook/method communication
                   
                   // Data access (scope-aware)
-                  vars: scopeContext.vars,
-                  helpers: scopeContext.helpers,
-                  scope: scopeContext.scopes[scopeName],  // The current scope object
-                  scopes: scopeContext.scopes,            // All scopes proxy
+                  vars: scopeContext.vars,                 // Merged variables (global + scope)
+                  helpers: scopeContext.helpers,           // Merged helpers (global + scope)
+                  scope: scopeContext.scopes[scopeName],   // The current scope object
+                  scopes: scopeContext.scopes,             // All scopes proxy
                   
                   // Capabilities
-                  runHooks: (name) => scopeContext.runHooks(name, context, params),
-                  log: scopeContext.log,
+                  runHooks: (name) => scopeContext.runHooks(name, context, params),  // Hook execution
+                  log: scopeContext.log,                   // Logging function
                   
                   // Metadata
-                  name: prop,
-                  apiOptions: scopeContext.apiOptions,
-                  pluginOptions: scopeContext.pluginOptions,
-                  scopeOptions: scopeContext.scopeOptions,
-                  scopeName: scopeName
+                  name: prop,                              // Method name
+                  apiOptions: scopeContext.apiOptions,     // Frozen API configuration
+                  pluginOptions: scopeContext.pluginOptions, // Mutable plugin options
+                  scopeOptions: scopeContext.scopeOptions, // Scope-specific options
+                  scopeName: scopeName                     // Current scope name
                 };
                 
-                // Add alias if one is set (alias is for the collection)
+                /**
+                 * Add scope alias if configured
+                 * Example: If scopeAlias is 'tables', adds handlerParams.tables = scopes
+                 * Allows plugins to use custom terminology
+                 */
                 if (this._scopeAlias) {
                   handlerParams[this._scopeAlias] = scopeContext.scopes;
                 }
                 
+                /**
+                 * Execute the method with error handling and performance tracking
+                 * Logs both successful completions and failures with timing info
+                 */
                 try {
                   const result = await handler(handlerParams);
                   const duration = Date.now() - startTime;
@@ -312,28 +579,56 @@ export class Api {
       }
     });
 
-    // Register this API instance
+    /**
+     * Register this API instance in the global registry
+     * Enables cross-API communication and version management
+     */
     this._register()
     
-    // Keep use, customize, and addScope as public methods
+    /**
+     * Expose certain internal methods as public API
+     * These are core functionality that users need direct access to
+     */
     this.addScope = this._addScope;
     this.setScopeAlias = this._setScopeAlias;
     
-    // Create the proxy first
+    /**
+     * Create the main API proxy
+     * 
+     * This proxy enables dynamic method access:
+     * - API methods take precedence (api.create(), api.update())
+     * - Falls back to regular properties (api.use, api.customize)
+     * - Provides clean API surface without exposing internals
+     * 
+     * The proxy is returned instead of 'this' to control access
+     */
     const proxy = new Proxy(this, {
       get(target, prop, receiver) {
-        // Check apiMethods first
+        /**
+         * Check for API methods first
+         * These are dynamically added methods like api.create(), api.find()
+         */
         if (target._apiMethods.has(prop)) {
+          /**
+           * Return a bound async function that executes the method
+           * with full context, logging, and error handling
+           */
           return async (params = {}) => {
             const startTime = Date.now();
             const handler = target._apiMethods.get(prop);
             
             target._logger.debug(`API method '${prop}' called`, { params });
             
-            // Create a mutable context for this method call
+            /**
+             * Create a fresh context for this API method call
+             * Similar to scope methods, this enables hook/method communication
+             */
             const context = {};
             
-            // Create logger for this context
+            /**
+             * Create a bound logger for this method's context
+             * Includes method name in all log messages
+             */
             const log = target._createContextLogger(prop);
             
             // Create flattened handler context
@@ -392,11 +687,32 @@ export class Api {
     return proxy;
   }
   
+  /**
+   * Formats and outputs log messages with appropriate styling
+   * 
+   * @private
+   * @param {number} level - Log level (0-4)
+   * @param {string} message - Log message
+   * @param {*} data - Optional data to log
+   * @param {string} context - Optional context (e.g., 'users.create')
+   * @param {string} apiName - Name of the API instance
+   * @param {Object} loggingOpts - Logging configuration
+   * @param {Object} customLogger - Logger instance (console or custom)
+   * 
+   * Features:
+   * - Color coding for different log levels (when colors enabled)
+   * - Timestamp support (ISO format)
+   * - JSON format option for structured logging
+   * - Context-aware prefixes for tracking log sources
+   */
   _formatAndOutput(level, message, data, context, apiName, loggingOpts, customLogger) {
     const levelName = LOG_LEVEL_NAMES[level];
     const timestamp = loggingOpts.timestamp ? new Date().toISOString() : '';
     
-    // Build the log prefix
+    /**
+     * Build the log prefix with optional colors and context
+     * Format: [TIMESTAMP] [LEVEL] [API:CONTEXT] MESSAGE
+     */
     let prefix = '';
     if (loggingOpts.format === 'pretty' && loggingOpts.colors && customLogger === console) {
       const color = LOG_COLORS[levelName];
@@ -417,7 +733,12 @@ export class Api {
     // Format the message
     let output = `${prefix} ${message}`;
     
-    // Log based on level
+    /**
+     * Output the log message using the appropriate method
+     * - JSON format: Always use log() with structured data
+     * - Pretty format: Use error(), warn(), or log() based on level
+     * - Includes data parameter when provided
+     */
     if (data !== undefined) {
       if (loggingOpts.format === 'json') {
         customLogger.log(JSON.stringify({ level: levelName, api: apiName, context, message, data, timestamp }));
@@ -445,11 +766,27 @@ export class Api {
     }
   }
 
+  /**
+   * Creates a logger instance for this API
+   * 
+   * @private
+   * @returns {Object} Logger with error, warn, info, debug, trace methods
+   * 
+   * The logger:
+   * - Respects the configured log level (only logs at or below the level)
+   * - Supports custom loggers (must have log, error, warn methods)
+   * - Provides context-aware logging for better debugging
+   * - Handles both pretty (colored) and JSON output formats
+   */
   _createLogger() {
     const apiName = this.options.name;
     const loggingOpts = this.options.logging;
     const customLogger = loggingOpts.logger;
     
+    /**
+     * Core logging function used by all log level methods
+     * Checks log level before processing to avoid unnecessary work
+     */
     const log = (level, message, data, context) => {
       // Check if this log level is enabled FIRST, before any work
       if (level > this._logLevel) return;

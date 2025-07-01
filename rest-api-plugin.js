@@ -6,6 +6,62 @@ import {
   validatePutPayload, 
   validatePatchPayload 
 } from './payloadValdators';
+import { HookedApiError } from './index.js';
+
+/**
+ * REST API specific error classes that can be mapped to HTTP status codes
+ * by the HTTP plugin or other protocol plugins
+ */
+
+/**
+ * Validation error for invalid payloads, schema violations, etc.
+ * HTTP plugin should map this to 422 Unprocessable Entity
+ */
+export class RestApiValidationError extends HookedApiError {
+  constructor(message, { fields = [], violations = [] } = {}) {
+    super(message, 'REST_API_VALIDATION_ERROR');
+    this.type = 'rest_api_validation';
+    this.details = {
+      fields,
+      violations
+    };
+  }
+}
+
+/**
+ * Resource-related errors (not found, conflicts, forbidden access)
+ * HTTP plugin should map based on subtype
+ */
+export class RestApiResourceError extends HookedApiError {
+  constructor(message, { subtype, resourceType, resourceId } = {}) {
+    super(message, 'REST_API_RESOURCE_ERROR');
+    this.type = 'rest_api_resource';
+    this.subtype = subtype; // 'not_found', 'conflict', 'forbidden'
+    this.details = {
+      resourceType,
+      resourceId
+    };
+  }
+}
+
+/**
+ * Payload structure errors (malformed JSON:API documents)
+ * HTTP plugin should map this to 400 Bad Request
+ */
+export class RestApiPayloadError extends HookedApiError {
+  constructor(message, { path, expected, received } = {}) {
+    super(message, 'REST_API_PAYLOAD_ERROR');
+    this.type = 'rest_api_payload';
+    this.details = {
+      path,
+      expected,
+      received
+    };
+  }
+}
+
+// Export error classes for use in payloadValidators.js
+export { RestApiValidationError, RestApiResourceError, RestApiPayloadError };
 
 export const RestApiPlugin = {
   name: 'rest-api',
@@ -219,10 +275,19 @@ export const RestApiPlugin = {
           
           // If there are validation errors, throw an error
           if (Object.keys(errors).length > 0) {
-            const errorMessages = Object.entries(errors)
-              .map(([field, error]) => `${field}: ${error.message}`)
-              .join(', ');
-            throw new Error(`Invalid filter parameters: ${errorMessages}`);
+            const violations = Object.entries(errors).map(([field, error]) => ({
+              field: `filter.${field}`,
+              rule: error.code || 'invalid_value',
+              message: error.message
+            }));
+            
+            throw new RestApiValidationError(
+              'Invalid filter parameters',
+              { 
+                fields: Object.keys(errors).map(field => `filter.${field}`),
+                violations 
+              }
+            );
           }
           
           // Replace filter with validated/transformed values
@@ -353,6 +418,18 @@ export const RestApiPlugin = {
         queryParams: params.queryParams,
         idProperty: vars.idProperty
       })
+    
+      // Check if record was found
+      if (!context.record || !context.record.data) {
+        throw new RestApiResourceError(
+          `Resource not found`,
+          { 
+            subtype: 'not_found',
+            resourceType: scopeName,
+            resourceId: params.id
+          }
+        );
+      }
     
       runHooks('checkDataPermissions')
       runHooks('checkDataPermissionsGet')
@@ -525,7 +602,17 @@ export const RestApiPlugin = {
       
       // Validate that the resource type matches the current scope
       if (params.inputRecord.data.type !== scopeName) {
-        throw new Error(`Resource type mismatch. Expected '${scopeName}' but got '${params.inputRecord.data.type}'`);
+        throw new RestApiValidationError(
+          `Resource type mismatch. Expected '${scopeName}' but got '${params.inputRecord.data.type}'`,
+          { 
+            fields: ['data.type'], 
+            violations: [{ 
+              field: 'data.type', 
+              rule: 'resource_type_match', 
+              message: `Resource type must be '${scopeName}'` 
+            }] 
+          }
+        );
       }
 
       // Create schema for validation
@@ -537,8 +624,19 @@ export const RestApiPlugin = {
       // Validate main resource attributes
       const { validatedObject: validatedAttrs, errors: mainErrors } = await context.schema.validate(context.inputRecord.data.attributes || {});
       if (Object.keys(mainErrors).length > 0) {
-        const firstError = Object.values(mainErrors)[0];
-        throw new Error(`Validation failed for field '${firstError.field}': ${firstError.message}`);
+        const violations = Object.entries(mainErrors).map(([field, error]) => ({
+          field: `data.attributes.${field}`,
+          rule: error.code || 'invalid_value',
+          message: error.message
+        }));
+        
+        throw new RestApiValidationError(
+          'Schema validation failed for resource attributes',
+          { 
+            fields: Object.keys(mainErrors).map(field => `data.attributes.${field}`),
+            violations 
+          }
+        );
       }
       context.inputRecord.data.attributes = validatedAttrs;
       
@@ -552,8 +650,19 @@ export const RestApiPlugin = {
         
         const { validatedObject: subValidatedAttrs, errors: subErrors } = await schema.validate(subInputRecord.attributes || {});
         if (Object.keys(subErrors).length > 0) {
-          const firstError = Object.values(subErrors)[0];
-          throw new Error(`Validation failed for included resource '${subInputRecord.type}' field '${firstError.field}': ${firstError.message}`);
+          const violations = Object.entries(subErrors).map(([field, error]) => ({
+            field: `included[${i}].attributes.${field}`,
+            rule: error.code || 'invalid_value',
+            message: error.message
+          }));
+          
+          throw new RestApiValidationError(
+            `Schema validation failed for included resource of type '${subInputRecord.type}'`,
+            { 
+              fields: Object.keys(subErrors).map(field => `included[${i}].attributes.${field}`),
+              violations 
+            }
+          );
         }
         subInputRecord.attributes = subValidatedAttrs;
       }
@@ -769,7 +878,10 @@ export const RestApiPlugin = {
 
     // Validate - PUT cannot have included
     if (context.inputRecord.included) {
-      throw new Error('PUT requests cannot include an "included" array for creating new resources');
+      throw new RestApiPayloadError(
+        'PUT requests cannot include an "included" array for creating new resources',
+        { path: 'included', expected: 'undefined', received: 'array' }
+      );
     }
 
     // Validate payload with scope validation
@@ -777,7 +889,17 @@ export const RestApiPlugin = {
     
     // Validate that the resource type matches the current scope
     if (context.inputRecord.data.type !== scopeName) {
-      throw new Error(`Resource type mismatch. Expected '${scopeName}' but got '${context.inputRecord.data.type}'`);
+      throw new RestApiValidationError(
+        `Resource type mismatch. Expected '${scopeName}' but got '${context.inputRecord.data.type}'`,
+        { 
+          fields: ['data.type'], 
+          violations: [{ 
+            field: 'data.type', 
+            rule: 'resource_type_match', 
+            message: `Resource type must be '${scopeName}'` 
+          }] 
+        }
+      );
     }
 
     if (vars.loadRecordOnPut) {
@@ -809,8 +931,19 @@ export const RestApiPlugin = {
   
     const { validatedObject, errors } = await context.schema.validate(context.inputRecord.data.attributes || {});
     if (Object.keys(errors).length > 0) {
-      const firstError = Object.values(errors)[0];
-      throw new Error(`Validation failed for field '${firstError.field}': ${firstError.message}`);
+      const violations = Object.entries(errors).map(([field, error]) => ({
+        field: `data.attributes.${field}`,
+        rule: error.code || 'invalid_value',
+        message: error.message
+      }));
+      
+      throw new RestApiValidationError(
+        'Schema validation failed for resource attributes',
+        { 
+          fields: Object.keys(errors).map(field => `data.attributes.${field}`),
+          violations 
+        }
+      );
     }
     context.inputRecord.data.attributes = validatedObject;
 
@@ -1016,14 +1149,27 @@ export const RestApiPlugin = {
 
       // Validate - PATCH cannot have included
       if (context.inputRecord.included) {
-        throw new Error('PATCH requests cannot include an "included" array for creating new resources');
+        throw new RestApiPayloadError(
+          'PATCH requests cannot include an "included" array for creating new resources',
+          { path: 'included', expected: 'undefined', received: 'array' }
+        );
       }
 
       validatePatchPayload(params.inputRecord, scopes)
       
       // Validate that the resource type matches the current scope
       if (params.inputRecord.data.type !== scopeName) {
-        throw new Error(`Resource type mismatch. Expected '${scopeName}' but got '${params.inputRecord.data.type}'`);
+        throw new RestApiValidationError(
+          `Resource type mismatch. Expected '${scopeName}' but got '${params.inputRecord.data.type}'`,
+          { 
+            fields: ['data.type'], 
+            violations: [{ 
+              field: 'data.type', 
+              rule: 'resource_type_match', 
+              message: `Resource type must be '${scopeName}'` 
+            }] 
+          }
+        );
       }
 
       // Create schema for validation
@@ -1040,8 +1186,19 @@ export const RestApiPlugin = {
           { onlyObjectValues: true }
         );
         if (Object.keys(errors).length > 0) {
-          const firstError = Object.values(errors)[0];
-          throw new Error(`Validation failed for field '${firstError.field}': ${firstError.message}`);
+          const violations = Object.entries(errors).map(([field, error]) => ({
+            field: `data.attributes.${field}`,
+            rule: error.code || 'invalid_value',
+            message: error.message
+          }));
+          
+          throw new RestApiValidationError(
+            'Schema validation failed for resource attributes',
+            { 
+              fields: Object.keys(errors).map(field => `data.attributes.${field}`),
+              violations 
+            }
+          );
         }
         context.inputRecord.data.attributes = validatedObject;
       }

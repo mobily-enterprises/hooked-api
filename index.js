@@ -804,6 +804,20 @@ export class Api {
     };
   }
   
+  /**
+   * Creates a context-aware logger for specific operations
+   * 
+   * @private
+   * @param {string} contextName - Context identifier (e.g., 'users.create', 'plugin:auth')
+   * @param {number|null} scopeLogLevel - Optional scope-specific log level
+   * @returns {Function} Logger function with level-specific methods
+   * 
+   * Context loggers are used to:
+   * - Add context information to all log messages
+   * - Support scope-specific log levels (different scopes can have different verbosity)
+   * - Track operations through complex execution paths
+   * - Provide consistent logging interface across all components
+   */
   _createContextLogger(contextName, scopeLogLevel = null) {
     // Check if we should use scope-specific log level
     const effectiveLogLevel = scopeLogLevel !== null ? scopeLogLevel : this._logLevel;
@@ -829,13 +843,28 @@ export class Api {
     return logger;
   }
 
+  /**
+   * Registers this API instance in the global registry
+   * 
+   * @private
+   * @returns {Api} This instance for chaining
+   * @throws {ConfigurationError} If the API name/version combination already exists
+   * 
+   * Registration enables:
+   * - Cross-API communication via Api.registry.get()
+   * - Version management with semver support
+   * - Plugin dependency resolution across APIs
+   * - Global API discovery and introspection
+   */
   _register() {
     const { name, version } = this.options
 
+    // Ensure the API name has a version map
     if (!globalRegistry.has(name)) {
       globalRegistry.set(name, new Map())
     }
 
+    // Check for duplicate registrations
     if (globalRegistry.get(name).has(version)) {
       const existingVersions = Array.from(globalRegistry.get(name).keys()).sort(semver.rcompare);
       throw new ConfigurationError(
@@ -848,20 +877,46 @@ export class Api {
       );
     }
 
+    // Register this instance
     globalRegistry.get(name).set(version, this)
     return this
   }
 
+  /**
+   * Static registry for global API instance management
+   * 
+   * The registry provides:
+   * - API instance retrieval by name and version
+   * - Semver range queries (e.g., '^1.0.0', '~2.1.0')
+   * - 'latest' version selection
+   * - API discovery and listing
+   * 
+   * This enables plugins and external code to access APIs
+   * without direct references, supporting loose coupling
+   */
   static registry = {
+    /**
+     * Retrieves an API instance by name and version
+     * 
+     * @param {string} apiName - Name of the API to retrieve
+     * @param {string} version - Version or range (default: 'latest')
+     * @returns {Api|null} The API instance or null if not found
+     * 
+     * Version can be:
+     * - 'latest' - Returns the highest version
+     * - Exact version - '1.0.0' returns that specific version
+     * - Semver range - '^1.0.0' returns highest matching version
+     */
     get(apiName, version = 'latest') {
       const versions = globalRegistry.get(apiName)
       if (!versions) return null;
 
+      // Try exact match first
       if (version !== 'latest' && versions.has(version)) {
         return versions.get(version);
       }
 
-      // Special case for 'latest'
+      // Special case for 'latest' - return highest version
       if (version === 'latest') {
         const sortedVersions = Array.from(versions.entries())
           .sort(([a], [b]) => semver.compare(b, a));
@@ -884,7 +939,7 @@ export class Api {
         return null;
       }
 
-      // Handle range queries
+      // Handle semver range queries
       const sortedVersions = Array.from(versions.entries())
         .sort(([a], [b]) => semver.compare(b, a));
       
@@ -897,6 +952,17 @@ export class Api {
       return null;
     },
 
+    /**
+     * Lists all registered APIs and their versions
+     * 
+     * @returns {Object} Map of API names to sorted version arrays
+     * 
+     * Example return value:
+     * {
+     *   'my-api': ['2.0.0', '1.5.0', '1.0.0'],
+     *   'auth-api': ['1.0.0']
+     * }
+     */
     list() {
       const registry = {}
       for (const [apiName, versionsMap] of globalRegistry) {
@@ -905,6 +971,13 @@ export class Api {
       return registry
     },
 
+    /**
+     * Checks if an API (and optionally specific version) exists
+     * 
+     * @param {string} apiName - Name of the API
+     * @param {string} [version] - Optional specific version
+     * @returns {boolean} True if exists
+     */
     has(apiName, version) {
       if (!apiName) return false;
       const versions = globalRegistry.get(apiName);
@@ -912,13 +985,41 @@ export class Api {
       return version ? versions.has(version) : versions.size > 0;
     },
 
+    /**
+     * Gets all versions for a specific API
+     * 
+     * @param {string} apiName - Name of the API
+     * @returns {string[]} Array of versions sorted newest first
+     */
     versions(apiName) {
       const versions = globalRegistry.get(apiName);
       return versions ? Array.from(versions.keys()).sort(semver.rcompare) : [];
     }
   }
 
+  /**
+   * Adds a hook handler to the hook execution chain
+   * 
+   * @private
+   * @param {string} hookName - Name of the hook (e.g., 'beforeCreate')
+   * @param {string} pluginName - Name of the plugin adding the hook
+   * @param {string} functionName - Name of the function for debugging
+   * @param {Object} hookAddOptions - Placement options
+   * @param {Function} handler - The hook handler function
+   * @returns {Api} This instance for chaining
+   * 
+   * Hook placement options:
+   * - beforePlugin: Insert before all hooks from specified plugin
+   * - afterPlugin: Insert after all hooks from specified plugin
+   * - beforeFunction: Insert before specific function
+   * - afterFunction: Insert after specific function
+   * - No option: Append to end of chain
+   * 
+   * Hooks are the core extensibility mechanism, allowing plugins
+   * to intercept and modify behavior at defined points
+   */
   _addHook(hookName, pluginName, functionName, hookAddOptions, handler) {
+    // Validate plugin name is provided
     if (!pluginName?.trim()) {
       const received = pluginName === undefined ? 'undefined' : pluginName === null ? 'null' : `empty string "${pluginName}"`;
       throw new ValidationError(
@@ -952,6 +1053,10 @@ export class Api {
       );
     }
 
+    /**
+     * Validate that only one placement option is specified
+     * Multiple placement options would be ambiguous
+     */
     const placements = [hookAddOptions.beforePlugin, hookAddOptions.afterPlugin, hookAddOptions.beforeFunction, hookAddOptions.afterFunction].filter(Boolean);
     if (placements.length > 1) {
       const specified = [];
@@ -969,6 +1074,10 @@ export class Api {
       );
     }
 
+    /**
+     * Initialize hook array if needed and create handler entry
+     * Each hook name maps to an array of handler objects
+     */
     if (!this._hooks.has(hookName)) {
       this._hooks.set(hookName, [])
     }
@@ -976,11 +1085,17 @@ export class Api {
     const handlers = this._hooks.get(hookName)
     const entry = { handler, pluginName, functionName }
 
+    // No placement specified - append to end
     if (placements.length === 0) {
       handlers.push(entry)
       return this
     }
 
+    /**
+     * Helper functions for finding hook positions
+     * findIndex: First occurrence (for 'before' placements)
+     * findLastIndex: Last occurrence (for 'after' placements)
+     */
     const findIndex = (arr, key, value) => arr.findIndex(h => h[key] === value)
     const findLastIndex = (arr, key, value) => {
       for (let i = arr.length - 1; i >= 0; i--) {
@@ -989,21 +1104,31 @@ export class Api {
       return -1
     }
 
+    /**
+     * Calculate insertion index based on placement options
+     * - beforePlugin: Insert before first hook from that plugin
+     * - afterPlugin: Insert after last hook from that plugin
+     * - beforeFunction: Insert before specific function
+     * - afterFunction: Insert after specific function
+     */
     let index = -1
     if (hookAddOptions.beforePlugin) {
       index = findIndex(handlers, 'pluginName', hookAddOptions.beforePlugin)
     } else if (hookAddOptions.afterPlugin) {
       index = findLastIndex(handlers, 'pluginName', hookAddOptions.afterPlugin)
-      if (index !== -1) index++
+      if (index !== -1) index++ // Insert after the found position
     } else if (hookAddOptions.beforeFunction) {
       index = findIndex(handlers, 'functionName', hookAddOptions.beforeFunction)
     } else if (hookAddOptions.afterFunction) {
       index = findIndex(handlers, 'functionName', hookAddOptions.afterFunction)
-      if (index !== -1) index++
+      if (index !== -1) index++ // Insert after the found position
     }
 
+    /**
+     * Insert the hook at the calculated position
+     * If placement target not found, append to end as fallback
+     */
     if (index === -1) {
-      // Placement target not found - add to end
       handlers.push(entry)
     } else {
       handlers.splice(index, 0, entry)
@@ -1011,6 +1136,22 @@ export class Api {
     return this
   }
 
+  /**
+   * Builds a context object for scope-aware method execution
+   * 
+   * @private
+   * @param {string} scopeName - Name of the scope
+   * @returns {Object} Context with merged vars, helpers, and scope-specific settings
+   * @throws {ScopeError} If scope doesn't exist
+   * 
+   * This method creates a specialized context that:
+   * - Merges global and scope-specific vars (scope takes precedence)
+   * - Merges global and scope-specific helpers (scope takes precedence)
+   * - Provides scope-aware logging with optional custom log levels
+   * - Freezes options to prevent modification during execution
+   * 
+   * The context is rebuilt for each method call to ensure isolation
+   */
   _buildScopeContext(scopeName) {
     const scopeConfig = this._scopes.get(scopeName);
     if (!scopeConfig) {
@@ -1027,10 +1168,14 @@ export class Api {
       );
     }
     
-    // Merge vars: scope vars take precedence
+    /**
+     * Merge variables with scope precedence
+     * This allows scopes to override global defaults while
+     * still having access to global vars
+     */
     const mergedVars = new Map([
-      ...this._vars,
-      ...scopeConfig._vars
+      ...this._vars,        // Global vars first
+      ...scopeConfig._vars  // Scope vars override
     ]);
     const varsProxy = new Proxy({}, {
       get: (target, prop) => mergedVars.get(prop),
@@ -1063,7 +1208,11 @@ export class Api {
     
     // Keep options separate and frozen
     
-    // Check for scope-specific log level
+    /**
+     * Handle scope-specific logging configuration
+     * Scopes can have their own log levels for fine-grained control
+     * Example: Set 'debug' for problematic scopes while keeping global at 'info'
+     */
     const scopeLogLevel = scopeConfig.options?.logging?.level;
     const effectiveLogLevel = scopeLogLevel !== undefined ? 
       (typeof scopeLogLevel === 'string' ? LOG_LEVEL_VALUES[scopeLogLevel.toLowerCase()] : scopeLogLevel) :
@@ -1085,6 +1234,17 @@ export class Api {
     };
   }
   
+  /**
+   * Builds a context object for global (non-scope) operations
+   * 
+   * @private
+   * @returns {Object} Context for global method execution
+   * 
+   * Similar to scope context but without scope-specific data:
+   * - Uses global vars and helpers directly
+   * - No scope merging or precedence
+   * - Used for API-level methods and global hooks
+   */
   _buildGlobalContext() {
     // Create logger for global context
     const log = this._createContextLogger('global');
@@ -1101,6 +1261,23 @@ export class Api {
     };
   }
 
+  /**
+   * Executes all handlers for a specific hook
+   * 
+   * @private
+   * @param {string} name - Hook name (e.g., 'beforeCreate')
+   * @param {Object} context - Mutable context object shared between hooks
+   * @param {Object} params - Method parameters
+   * @param {string|null} scopeName - Current scope name if applicable
+   * @returns {Promise<boolean>} True if all hooks passed, false if chain was stopped
+   * 
+   * Hook execution features:
+   * - Sequential execution in registration order
+   * - Chain stopping: Return false to prevent further hooks
+   * - Error propagation: Thrown errors stop execution
+   * - Performance tracking: Logs timing for each handler
+   * - Context sharing: All hooks receive the same context object
+   */
   async _runHooks(name, context, params = {}, scopeName = null) {
     const handlers = this._hooks.get(name) || []
     if (handlers.length === 0) {
@@ -1113,12 +1290,20 @@ export class Api {
     
     const handlerContext = scopeName ? this._buildScopeContext(scopeName) : this._buildGlobalContext();
     
+    /**
+     * Execute each hook handler in sequence
+     * Track success and allow chain interruption
+     */
     let handlerIndex = 0;
     let allSuccessful = true;
     for (const { handler, pluginName, functionName } of handlers) {
       const startTime = Date.now();
       this._logger.trace(`Hook handler '${functionName}' starting`, { plugin: pluginName, hook: name, scope: scopeName });
-        // Flatten the handler parameters
+        
+        /**
+         * Prepare comprehensive parameters for hook handlers
+         * Provides everything a hook might need to modify behavior
+         */
         const handlerParams = { 
           // User data
           methodParams: params,
@@ -1147,6 +1332,12 @@ export class Api {
           handlerParams[this._scopeAlias] = handlerContext.scopes;
         }
         
+        /**
+         * Execute hook with error handling
+         * - False return value stops the chain
+         * - Exceptions propagate and stop execution
+         * - All other returns continue the chain
+         */
         try {
           const result = await handler(handlerParams);
           const duration = Date.now() - startTime;
@@ -1154,7 +1345,7 @@ export class Api {
           if (result === false) {
             this._logger.debug(`Hook handler '${functionName}' stopped chain`, { plugin: pluginName, hook: name, duration: `${duration}ms` });
             allSuccessful = false;
-            break;
+            break; // Stop processing further hooks
           } else {
             this._logger.trace(`Hook handler '${functionName}' completed`, { plugin: pluginName, hook: name, duration: `${duration}ms` });
           }
@@ -1166,7 +1357,7 @@ export class Api {
             error: error.message, 
             duration: `${duration}ms` 
           });
-          throw error;
+          throw error; // Propagate error to method caller
         }
         
         handlerIndex++;
@@ -1177,6 +1368,21 @@ export class Api {
   }
 
 
+  /**
+   * Adds a method directly to the API instance
+   * 
+   * @private
+   * @param {string} method - Method name
+   * @param {Function} handler - Method implementation
+   * @returns {Api} This instance for chaining
+   * @throws {ValidationError} If method name is invalid
+   * @throws {MethodError} If method conflicts with existing property
+   * 
+   * API methods are accessible directly on the API instance:
+   * api.myMethod() instead of api.scopes.something.myMethod()
+   * 
+   * Used for global operations that don't belong to a specific scope
+   */
   _addApiMethod(method, handler) {
     if (!method || typeof method !== 'string') {
       const received = method === undefined ? 'undefined' : 
@@ -1227,7 +1433,11 @@ export class Api {
       );
     }
     
-    // Check if property already exists on the instance or prototype chain
+    /**
+     * Check for property conflicts
+     * API methods become properties on the proxy, so they can't
+     * conflict with existing properties or methods
+     */
     if (method in this) {
       const propertyType = typeof this[method];
       const suggestion = this._apiMethods.has(method) ? 
@@ -1247,6 +1457,23 @@ export class Api {
     return this
   }
 
+  /**
+   * Adds a method template that will be available on all scopes
+   * 
+   * @private
+   * @param {string} method - Method name
+   * @param {Function} handler - Method implementation
+   * @returns {Api} This instance for chaining
+   * @throws {ValidationError} If method name is invalid
+   * 
+   * Scope methods are templates that get applied to every scope:
+   * - api.scopes.users.list()
+   * - api.scopes.posts.list()
+   * - api.scopes.comments.list()
+   * 
+   * The handler receives scopeName in its context to know which
+   * scope it's operating on
+   */
   _addScopeMethod(method, handler) {
     if (!method || typeof method !== 'string') {
       const received = method === undefined ? 'undefined' : 
@@ -1303,8 +1530,33 @@ export class Api {
     return this
   }
 
+  /**
+   * Customizes the API with hooks, methods, vars, and helpers
+   * 
+   * @param {Object} options - Customization options
+   * @param {Object} options.hooks - Hook definitions
+   * @param {Object} options.apiMethods - API-level methods
+   * @param {Object} options.scopeMethods - Scope method templates
+   * @param {Object} options.vars - Shared variables
+   * @param {Object} options.helpers - Helper functions
+   * @returns {Api} This instance for chaining
+   * 
+   * This is the main method for extending an API without plugins.
+   * It's used internally by plugins and can be called directly:
+   * 
+   * api.customize({
+   *   hooks: { beforeCreate: async (ctx) => {...} },
+   *   apiMethods: { backup: async (ctx) => {...} },
+   *   scopeMethods: { count: async (ctx) => {...} },
+   *   vars: { config: { timeout: 5000 } },
+   *   helpers: { validate: (data) => {...} }
+   * })
+   */
   customize({ hooks = {}, apiMethods = {}, scopeMethods = {}, vars = {}, helpers = {} } = {}) {
-    // Process hooks
+    /**
+     * Process hook definitions
+     * Hooks can be functions or objects with handler and placement options
+     */
     for (const [hookName, hookDef] of Object.entries(hooks)) {
       let handler, functionName, hookAddOptions
       
@@ -1346,25 +1598,39 @@ export class Api {
         )
       }
       
+      /**
+       * Add hook with special plugin name for customize() calls
+       * This helps identify hooks added via customize vs plugins
+       */
       this._addHook(hookName, `api-custom:${this.options.name}`, functionName, hookAddOptions, handler)
     }
 
-    // Process vars
+    /**
+     * Process variables - stored in Map for efficient access
+     * Variables are shared state accessible in all methods and hooks
+     */
     for (const [varName, value] of Object.entries(vars)) {
       this._vars.set(varName, value);
     }
 
-    // Process helpers
+    /**
+     * Process helpers - reusable functions available in methods
+     * Helpers don't receive context automatically, they're just functions
+     */
     for (const [helperName, value] of Object.entries(helpers)) {
       this._helpers.set(helperName, value);
     }
 
-    // Process apiMethods
+    /**
+     * Process API methods - become available on the API instance
+     */
     for (const [methodName, handler] of Object.entries(apiMethods)) {
       this._addApiMethod(methodName, handler);
     }
 
-    // Process scopeMethods
+    /**
+     * Process scope methods - become available on all scopes
+     */
     for (const [methodName, handler] of Object.entries(scopeMethods)) {
       this._addScopeMethod(methodName, handler);
     }
@@ -1372,6 +1638,23 @@ export class Api {
     return this;
   }
 
+  /**
+   * Creates a new scope with its own methods, vars, and configuration
+   * 
+   * @private
+   * @param {string} name - Scope name (e.g., 'users', 'posts')
+   * @param {Object} options - Scope configuration (frozen and stored)
+   * @param {Object} extras - Additional customizations
+   * @returns {Api} This instance for chaining
+   * @throws {ValidationError} If scope name is invalid
+   * @throws {ScopeError} If scope already exists
+   * 
+   * Scopes are the primary organizational unit in Hooked API:
+   * - Each scope represents a logical grouping (often a database table)
+   * - Scopes have their own vars, helpers, and methods
+   * - Scope methods have access to both global and scope-specific data
+   * - Scopes can have custom logging levels and configuration
+   */
   _addScope(name, options = {}, extras = {}) {
     if (!name || typeof name !== 'string') {
       const received = name === undefined ? 'undefined' : 
@@ -1436,7 +1719,11 @@ export class Api {
       this._logger.trace(`Scope '${name}' includes: ${additions.join(', ')}`);
     }
     
-    // Process scope hooks - wrap them to only run for this scope
+    /**
+     * Process scope-specific hooks
+     * These hooks only run when methods on this specific scope are called
+     * They're wrapped to check scopeName before execution
+     */
     for (const [hookName, hookDef] of Object.entries(hooks)) {
       let handler, functionName, hookAddOptions
       
@@ -1478,31 +1765,56 @@ export class Api {
         )
       }
       
-      // Wrap handler to only run for this scope
+      /**
+       * Wrap the handler to make it scope-specific
+       * This ensures the hook only runs for methods on this scope,
+       * not for methods on other scopes or global methods
+       */
       const scopeName = name; // Capture scope name in closure
       const wrappedHandler = (handlerParams) => {
         if (handlerParams.scopeName === scopeName) {
           return handler(handlerParams);
         }
+        // Return undefined (not false) to continue chain for other scopes
       };
       
       this._addHook(hookName, `scope-custom:${name}`, functionName, hookAddOptions, wrappedHandler)
       this._logger.trace(`Added scope-specific hook '${hookName}' for scope '${name}'`);
     }
     
-    // Store scope configuration with underscore prefix for internal properties
+    /**
+     * Store scope configuration
+     * Options are frozen to prevent modification after creation
+     * Internal properties use underscore prefix for consistency
+     */
     this._scopes.set(name, {
-      options: Object.freeze({ ...options }),
-      _apiMethods: new Map(Object.entries(apiMethods)),
-      _scopeMethods: new Map(Object.entries(scopeMethods)),
-      _vars: new Map(Object.entries(vars)),
-      _helpers: new Map(Object.entries(helpers))
+      options: Object.freeze({ ...options }),         // User-provided configuration
+      _apiMethods: new Map(Object.entries(apiMethods)), // Scope-specific API methods (rarely used)
+      _scopeMethods: new Map(Object.entries(scopeMethods)), // Scope-specific methods
+      _vars: new Map(Object.entries(vars)),            // Scope variables
+      _helpers: new Map(Object.entries(helpers))       // Scope helper functions
     });
     
     this._logger.info(`Scope '${name}' added successfully`);
     return this;
   }
 
+  /**
+   * Sets custom aliases for scope access and creation
+   * 
+   * @private
+   * @param {string|null} aliasName - Alias for api.scopes (e.g., 'tables')
+   * @param {string|null} addScopeAlias - Alias for api.addScope (e.g., 'addTable')
+   * @returns {Api} This instance for chaining
+   * @throws {ValidationError} If alias names are invalid
+   * @throws {ConfigurationError} If aliases conflict with existing properties
+   * 
+   * This allows domain-specific naming:
+   * - api.tables.users.find() instead of api.scopes.users.find()
+   * - api.addTable('orders') instead of api.addScope('orders')
+   * 
+   * Aliases make APIs more intuitive for specific domains
+   */
   _setScopeAlias(aliasName, addScopeAlias = null) {
     if (aliasName !== null || addScopeAlias !== null) {
       this._logger.debug(`Setting scope aliases`, { scopeAlias: aliasName, addScopeAlias });
@@ -1585,6 +1897,33 @@ export class Api {
 
 
 
+  /**
+   * Installs a plugin to extend the API functionality
+   * 
+   * @param {Object} plugin - Plugin object with name and install function
+   * @param {string} plugin.name - Unique plugin identifier
+   * @param {Function} plugin.install - Installation function
+   * @param {string[]} [plugin.dependencies] - Required plugin names
+   * @param {Object} [options={}] - Plugin-specific options
+   * @returns {Api} This instance for chaining
+   * @throws {PluginError} If plugin is invalid or dependencies missing
+   * 
+   * Plugins are the primary extension mechanism:
+   * - Encapsulate related functionality
+   * - Can depend on other plugins
+   * - Receive a rich context during installation
+   * - Can add hooks, methods, scopes, vars, and helpers
+   * 
+   * Example:
+   * api.use({
+   *   name: 'auth',
+   *   dependencies: ['session'],
+   *   install: (ctx) => {
+   *     ctx.addHook('beforeCreate', 'validateUser', {}, handler)
+   *     ctx.addApiMethod('login', loginHandler)
+   *   }
+   * })
+   */
   use(plugin, options = {}) {
     if (typeof plugin !== 'object' || plugin === null) {
       const received = plugin === undefined ? 'undefined' : 
@@ -1622,6 +1961,10 @@ export class Api {
       );
     }
 
+    /**
+     * Check for reserved plugin names that would conflict
+     * with core API properties
+     */
     if (plugin.name === 'api' || plugin.name === 'scopes') {
       throw new PluginError(
         `Plugin name '${plugin.name}' is reserved. These names are used internally by the API. Choose a different name like '${plugin.name}-plugin' or 'custom-${plugin.name}'.`,
@@ -1643,6 +1986,11 @@ export class Api {
       );
     }
 
+    /**
+     * Validate plugin dependencies are satisfied
+     * This ensures plugins are installed in the correct order
+     * and prevents runtime errors from missing dependencies
+     */
     const dependencies = plugin.dependencies || []
     if (dependencies.length > 0) {
       this._logger.debug(`Checking dependencies for plugin '${plugin.name}'`, { dependencies });
@@ -1668,16 +2016,27 @@ export class Api {
     const startTime = Date.now();
     
     try {
-      // Store plugin options separately
+      /**
+       * Store plugin options in a frozen object
+       * These are accessible to the plugin and other code
+       * via apiOptions.pluginOptions[pluginName]
+       */
       this._pluginOptions[plugin.name] = Object.freeze(options)
       
       // Create logger for plugin context
       const log = this._createContextLogger(`plugin:${plugin.name}`);
       
-      // Create flattened install context
-      const api = this; // Capture this reference
+      /**
+       * Create the installation context
+       * This provides all the capabilities a plugin needs to
+       * extend the API during its install phase
+       */
+      const api = this; // Capture this reference for closures
       const installContext = {
-        // Setup methods
+        /**
+         * Setup methods - wrapped versions that log plugin attribution
+         * This helps track which plugin added what functionality
+         */
         addApiMethod: (method, handler) => {
           if (api._logger) {
             api._logger.trace(`Plugin '${plugin.name}' adding API method '${method}'`);
@@ -1697,28 +2056,43 @@ export class Api {
           return api._setScopeAlias(aliasName, addScopeAlias);
         },
         
-        // Special addHook that injects plugin name
+        /**
+         * Special addHook that automatically injects the plugin name
+         * This ensures all hooks can be traced back to their source plugin
+         */
         addHook: (hookName, functionName, hookAddOptions, handler) => {
           this._logger.trace(`Plugin '${plugin.name}' adding hook '${hookName}' with function '${functionName}'`);
           return this._addHook(hookName, plugin.name, functionName, hookAddOptions || {}, handler);
         },
         
-        // Data access
+        /**
+         * Data access - plugins can read/write vars and helpers
+         * during installation
+         */
         vars: this._varsProxy,
         helpers: this._helpersProxy,
         scopes: this.scopes,
         
-        // Logging
+        // Plugin-specific logger
         log,
         
-        // Plugin info
+        /**
+         * Plugin information and options
+         * Options are frozen to prevent modification after installation
+         */
         name: plugin.name,
         apiOptions: Object.freeze({ ...this._apiOptions }),
         pluginOptions: Object.freeze({ ...this._pluginOptions }),
-        context: {}
+        context: {} // Mutable context for plugin's internal use
       };
       
+      /**
+       * Execute the plugin's install function
+       * This is where the plugin sets up all its functionality
+       */
       plugin.install(installContext)
+      
+      // Mark plugin as installed to prevent duplicates and satisfy dependencies
       this._installedPlugins.add(plugin.name)
       
       const duration = Date.now() - startTime;
@@ -1726,6 +2100,11 @@ export class Api {
     } catch (error) {
       const duration = Date.now() - startTime;
       this._logger.error(`Failed to install plugin '${plugin.name}'`, { error: error.message, duration: `${duration}ms` });
+      
+      /**
+       * Wrap the error to provide plugin context
+       * This helps developers identify which plugin caused the issue
+       */
       throw new PluginError(
         `Failed to install plugin '${plugin.name}': ${error.message}`,
         {
@@ -1738,6 +2117,20 @@ export class Api {
   }
 }
 
+/**
+ * Utility function to reset the global registry
+ * 
+ * This is primarily used for testing to ensure a clean state
+ * between test runs. In production, the registry persists for
+ * the lifetime of the process.
+ * 
+ * @example
+ * import { resetGlobalRegistryForTesting } from 'hooked-api'
+ * 
+ * beforeEach(() => {
+ *   resetGlobalRegistryForTesting()
+ * })
+ */
 export const resetGlobalRegistryForTesting = () => {
   globalRegistry = new Map()
 }

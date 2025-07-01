@@ -6,82 +6,33 @@ import {
   validatePutPayload, 
   validatePatchPayload 
 } from './payloadValdators';
-import { HookedApiError } from './index.js';
-
-/**
- * REST API specific error classes that can be mapped to HTTP status codes
- * by the HTTP plugin or other protocol plugins
- */
-
-/**
- * Validation error for invalid payloads, schema violations, etc.
- * HTTP plugin should map this to 422 Unprocessable Entity
- */
-export class RestApiValidationError extends HookedApiError {
-  constructor(message, { fields = [], violations = [] } = {}) {
-    super(message, 'REST_API_VALIDATION_ERROR');
-    this.type = 'rest_api_validation';
-    this.details = {
-      fields,
-      violations
-    };
-  }
-}
-
-/**
- * Resource-related errors (not found, conflicts, forbidden access)
- * HTTP plugin should map based on subtype
- */
-export class RestApiResourceError extends HookedApiError {
-  constructor(message, { subtype, resourceType, resourceId } = {}) {
-    super(message, 'REST_API_RESOURCE_ERROR');
-    this.type = 'rest_api_resource';
-    this.subtype = subtype; // 'not_found', 'conflict', 'forbidden'
-    this.details = {
-      resourceType,
-      resourceId
-    };
-  }
-}
-
-/**
- * Payload structure errors (malformed JSON:API documents)
- * HTTP plugin should map this to 400 Bad Request
- */
-export class RestApiPayloadError extends HookedApiError {
-  constructor(message, { path, expected, received } = {}) {
-    super(message, 'REST_API_PAYLOAD_ERROR');
-    this.type = 'rest_api_payload';
-    this.details = {
-      path,
-      expected,
-      received
-    };
-  }
-}
-
-// Export error classes for use in payloadValidators.js
-export { RestApiValidationError, RestApiResourceError, RestApiPayloadError };
+import { 
+  RestApiValidationError, 
+  RestApiResourceError, 
+  RestApiPayloadError 
+} from './rest-api-errors.js';
 
 export const RestApiPlugin = {
   name: 'rest-api',
 
-  /* Features implemented:
-  Vars (global/scope-configurable):
-  - sortableFields: Array of fields that can be sorted (default: [])
-  - defaultSort: Default sort order applied when none specified (default: null)
-  - idProperty: Property name for the ID field (default: 'id')
-  
-  Scope-only options:
-  - searchSchema: Schema for validating filter parameters (falls back to scope's main schema)
-  */
-
   install({ helpers, addScopeMethod, vars, addHook, apiOptions, pluginOptions }) {
 
-    // Initialize default vars for the plugin
-    vars.sortableFields = vars.sortableFields || [];
-    vars.defaultSort = vars.defaultSort || null;
-    vars.idProperty = vars.idProperty || 'id';
+    // Initialize default vars for the plugin from pluginOptions
+    const restApiOptions = pluginOptions['rest-api'] || {};
+    
+    vars.sortableFields = restApiOptions.sortableFields || [];
+    vars.defaultSort = restApiOptions.defaultSort || null;
+    vars.idProperty = restApiOptions.idProperty || 'id';
+    vars.pageSize = restApiOptions.pageSize || 20;
+    vars.maxPageSize = restApiOptions.maxPageSize || 100;
+    vars.loadRecordOnPut = !!restApiOptions.loadRecordOnPut;
+    
+    // Return full record configuration
+    vars.returnFullRecord = {
+      post: restApiOptions.returnFullRecord?.post ?? false,
+      put: restApiOptions.returnFullRecord?.put ?? false,
+      patch: restApiOptions.returnFullRecord?.patch ?? false
+    };
 
     addScopeMethod('enrichAttributes', async ({ params, context, vars, helpers, scope, scopes, runHooks, apiOptions, pluginOptions, scopeOptions, scopeName }) => {
       
@@ -322,7 +273,7 @@ export const RestApiPlugin = {
 
       // The called hooks should NOT change context.record
       runHooks('finish')
-      runHooks('finishGet')
+      runHooks('finishQuery')
       return context.record
     })
 
@@ -642,7 +593,9 @@ export const RestApiPlugin = {
       
       // Validate included resources
       context.schemas = {}
-      for (const subInputRecord of (context.inputRecord.included || [])) {
+      const includedResources = context.inputRecord.included || [];
+      for (let i = 0; i < includedResources.length; i++) {
+        const subInputRecord = includedResources[i];
         const scopeConfig = scopes[subInputRecord.type];
         // The validator already checked that the type exists, so scopeConfig should be valid
         const schemaFromOptions = scopeConfig?.options?.insertSchema || scopeConfig?.options?.schema || {};
@@ -674,26 +627,44 @@ export const RestApiPlugin = {
       
       runHooks('beforeDataCall')
       runHooks('beforeDataCallPost')
-      await helpers.dataPost({
+      
+      // Create the record - storage helper should return the created record with its ID
+      context.record = await helpers.dataPost({
         scopeName,
-        schema: context.schema,
-        record: context.record,
-        relationships: params.relationships,
-        included: params.included,
+        inputRecord: context.inputRecord,
         idProperty: vars.idProperty
       });
       
-      // Get the return record
-      if (vars.returnFullRecord) {
+      runHooks('afterDataCallPost')
+      runHooks('afterDataCall')
+      
+      // Get the full record with relationships if requested
+      if (vars.returnFullRecord?.post !== false) {
         context.returnRecord = await helpers.dataGet({
           scopeName,
-          schema: context.schema,
-          record: context.record,
-          fields: params.queryParams.fields,
-          include: params.queryParams.include,
+          id: context.record.data.id,
+          queryParams: params.queryParams,
           idProperty: vars.idProperty
         });
-      }       
+      } else {
+        context.returnRecord = context.record;
+      }
+      
+      // Enrich the return record's attributes
+      if (context.returnRecord?.data?.attributes) {
+        context.returnRecord.data.attributes = await scope.enrichAttributes({
+          attributes: context.returnRecord.data.attributes, 
+          parentContext: context
+        });
+      }
+      
+      // Enrich included resources if any
+      for (const entry of (context.returnRecord?.included || [])) {
+        entry.attributes = await scopes[entry.type].enrichAttributes({
+          attributes: entry.attributes, 
+          parentContext: context
+        });
+      }
       
       runHooks('finish')
       runHooks('finishPost')
@@ -977,14 +948,30 @@ export const RestApiPlugin = {
     }
 
     // Get return record if needed
-    if (vars.returnFullRecord.put) {
+    if (vars.returnFullRecord?.put !== false) {
       context.returnRecord = await helpers.dataGet({
         scopeName,
         id: context.id,
-        schema: context.schema,
-        fields: params.queryParams.fields,
-        include: params.queryParams.include,
+        queryParams: params.queryParams,
         idProperty: vars.idProperty
+      });
+    } else {
+      context.returnRecord = context.record;
+    }
+    
+    // Enrich the return record's attributes
+    if (context.returnRecord?.data?.attributes) {
+      context.returnRecord.data.attributes = await scope.enrichAttributes({
+        attributes: context.returnRecord.data.attributes, 
+        parentContext: context
+      });
+    }
+    
+    // Enrich included resources if any
+    for (const entry of (context.returnRecord?.included || [])) {
+      entry.attributes = await scopes[entry.type].enrichAttributes({
+        attributes: entry.attributes, 
+        parentContext: context
       });
     }
 
@@ -1213,14 +1200,10 @@ export const RestApiPlugin = {
       runHooks('beforeDataCall')
       runHooks('beforeDataCallPatch')
 
-      // Initialize record context for hooks
-      context.record = {}
-
-      // Call the storage helper
+      // Call the storage helper - should return the patched record
       context.record = await helpers.dataPatch({
         scopeName,
         id: context.id,
-        schema: context.schema,
         inputRecord: context.inputRecord,
         idProperty: vars.idProperty
       });
@@ -1232,14 +1215,30 @@ export const RestApiPlugin = {
       runHooks('checkDataPermissionsPatch')
 
       // Get return record if needed
-      if (vars.returnFullRecord.patch) {
+      if (vars.returnFullRecord?.patch !== false) {
         context.returnRecord = await helpers.dataGet({
           scopeName,
           id: context.id,
-          schema: context.schema,
-          fields: params.queryParams.fields,
-          include: params.queryParams.include,
+          queryParams: params.queryParams,
           idProperty: vars.idProperty
+        });
+      } else {
+        context.returnRecord = context.record;
+      }
+      
+      // Enrich the return record's attributes
+      if (context.returnRecord?.data?.attributes) {
+        context.returnRecord.data.attributes = await scope.enrichAttributes({
+          attributes: context.returnRecord.data.attributes, 
+          parentContext: context
+        });
+      }
+      
+      // Enrich included resources if any
+      for (const entry of (context.returnRecord?.included || [])) {
+        entry.attributes = await scopes[entry.type].enrichAttributes({
+          attributes: entry.attributes, 
+          parentContext: context
         });
       }
 
@@ -1348,21 +1347,6 @@ export const RestApiPlugin = {
     };
 
 
-    // Add REST API configuration
-    vars.pageSize = pluginOptions['rest-api']?.pageSize || 20
-    vars.maxPageSize = pluginOptions['rest-api']?.maxPageSize || 100
-    vars.idProperty = pluginOptions['rest-api']?.idProperty || 'id'
-    vars.loadRecordOnPut = !!pluginOptions['rest-api']?.loadRecordOnPut
-    
-    // Sorting configuration
-    vars.sortableFields = pluginOptions['rest-api']?.sortableFields || []
-    vars.defaultSort = pluginOptions['rest-api']?.defaultSort || null
-    
-    vars.returnFullRecord = {
-      put: false,
-      post: false,
-      patch: false
-    }
 
   }
 };

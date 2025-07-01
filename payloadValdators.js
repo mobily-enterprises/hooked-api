@@ -1,5 +1,5 @@
 
-import { RestApiValidationError, RestApiPayloadError } from './rest-api-plugin.js';
+import { RestApiValidationError, RestApiPayloadError } from './rest-api-errors.js';
 
 /**
  * Validates a JSON:API resource identifier object

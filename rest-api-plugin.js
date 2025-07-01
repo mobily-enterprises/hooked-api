@@ -1,5 +1,11 @@
-import CreateSchema from 'json-rest-api-schema'
-import { validateGetPayload, validateGetPayload } from './payloadValdators';
+import CreateSchema from 'jsonrestapi-schema'
+import { 
+  validateGetPayload, 
+  validateQueryPayload, 
+  validatePostPayload, 
+  validatePutPayload, 
+  validatePatchPayload 
+} from './payloadValdators';
 
 export const RestApiPlugin = {
   name: 'rest-api',
@@ -193,11 +199,11 @@ export const RestApiPlugin = {
       // This will enhance record, which is the WHOLE JSON:API record
       runHooks('enrichRecord')
 
-      // Run entichAttributes for every single set of attribute, calling it from the right API
+      // Run enrichAttributes for every single set of attribute, calling it from the right API
       for (const entry of context.record.data) {
-        entry.attributes = await scope.enrichAttributes({attributes: context.record.data.attributes, parentContext: context})
+        entry.attributes = await scope.enrichAttributes({attributes: entry.attributes, parentContext: context})
       }
-      for (const entry of context.record.included) {
+      for (const entry of (context.record.included || [])) {
         entry.attributes = await scopes[entry.type].enrichAttributes({attributes: entry.attributes, parentContext: context})
       }
 
@@ -304,7 +310,7 @@ export const RestApiPlugin = {
       // This will enhance record, which is the WHOLE JSON:API record
       runHooks('enrichRecord')
       context.record.data.attributes = await scope.enrichAttributes({attributes: context.record.data.attributes, parentContext: context})
-      for (const entry of context.record.included) {
+      for (const entry of (context.record.included || [])) {
         entry.attributes = await scopes[entry.type].enrichAttributes({attributes: entry.attributes, parentContext: context})
       }
       
@@ -462,7 +468,7 @@ export const RestApiPlugin = {
       context.queryParams = params.queryParams
 
       // Check payload
-      validatePostPayload(params.record)
+      validatePostPayload(params.inputRecord)
 
       // Create schema for validation
       context.schema = CreateSchema(scopeOptions.insertSchema || scopeOptions.schema || {})
@@ -470,12 +476,30 @@ export const RestApiPlugin = {
       // Apply schema to the main attributes and to ALL of the included ones
       runHooks('beforeSchemaValidate')
       runHooks('beforeSchemaValidatePost')
-      context.inputRecord.data.attributes = context.schema.validate(context.inputRecord.data.attributes)
+      // Validate main resource attributes
+      const { validatedObject: validatedAttrs, errors: mainErrors } = await context.schema.validate(context.inputRecord.data.attributes || {});
+      if (Object.keys(mainErrors).length > 0) {
+        const firstError = Object.values(mainErrors)[0];
+        throw new Error(`Validation failed for field '${firstError.field}': ${firstError.message}`);
+      }
+      context.inputRecord.data.attributes = validatedAttrs;
+      
+      // Validate included resources
       context.schemas = {}
-      for (const subInputRecord in (context.inputRecord.included || [])) {
-        const schemaFromOptions = apiOptions.insertSchema || apiOptions.schema || {}
-        const schema = context.schemas[subInputRecord.type] = context.schemas[subInputRecord.type] || new Schema(schemaFromOptions)
-        subInputRecord.attributes = schema.validate(subInputRecord.attributes)
+      for (const subInputRecord of (context.inputRecord.included || [])) {
+        const scopeConfig = scopes[subInputRecord.type];
+        if (!scopeConfig) {
+          throw new Error(`Unknown resource type in included: ${subInputRecord.type}`);
+        }
+        const schemaFromOptions = scopeConfig.options?.insertSchema || scopeConfig.options?.schema || {};
+        const schema = context.schemas[subInputRecord.type] = context.schemas[subInputRecord.type] || CreateSchema(schemaFromOptions);
+        
+        const { validatedObject: subValidatedAttrs, errors: subErrors } = await schema.validate(subInputRecord.attributes || {});
+        if (Object.keys(subErrors).length > 0) {
+          const firstError = Object.values(subErrors)[0];
+          throw new Error(`Validation failed for included resource '${subInputRecord.type}' field '${firstError.field}': ${firstError.message}`);
+        }
+        subInputRecord.attributes = subValidatedAttrs;
       }
       runHooks('afterSchemaValidatePost')
       runHooks('afterSchemaValidate')
@@ -718,7 +742,12 @@ export const RestApiPlugin = {
     runHooks('beforeSchemaValidatePut')
     runHooks(`beforeSchemaValidatePut${context.isCreate ? 'Create' : 'Update'}`)
   
-    context.inputRecord.data.attributes = context.schema.validate(context.inputRecord.data.attributes || {})
+    const { validatedObject, errors } = await context.schema.validate(context.inputRecord.data.attributes || {});
+    if (Object.keys(errors).length > 0) {
+      const firstError = Object.values(errors)[0];
+      throw new Error(`Validation failed for field '${firstError.field}': ${firstError.message}`);
+    }
+    context.inputRecord.data.attributes = validatedObject;
 
     runHooks('afterSchemaValidatePut')
     runHooks('afterSchemaValidate')
@@ -934,7 +963,15 @@ export const RestApiPlugin = {
       
       // Validate only the provided attributes (partial validation)
       if (context.inputRecord.data.attributes) {
-        context.inputRecord.data.attributes = context.schema.validatePartial(context.inputRecord.data.attributes)
+        const { validatedObject, errors } = await context.schema.validate(
+          context.inputRecord.data.attributes, 
+          { onlyObjectValues: true }
+        );
+        if (Object.keys(errors).length > 0) {
+          const firstError = Object.values(errors)[0];
+          throw new Error(`Validation failed for field '${firstError.field}': ${firstError.message}`);
+        }
+        context.inputRecord.data.attributes = validatedObject;
       }
 
       runHooks('afterSchemaValidatePatch')

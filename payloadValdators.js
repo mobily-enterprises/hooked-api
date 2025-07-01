@@ -3,16 +3,22 @@
  * Validates a JSON:API resource identifier object
  * @param {Object} identifier - The resource identifier to validate
  * @param {string} context - Context for error messages
+ * @param {Object} scopes - The scopes proxy object to check if type exists
  * @returns {boolean} True if valid
  * @throws {Error} If validation fails
  */
-function validateResourceIdentifier(identifier, context) {
+function validateResourceIdentifier(identifier, context, scopes = null) {
   if (!identifier || typeof identifier !== 'object') {
     throw new Error(`${context}: Resource identifier must be an object`);
   }
   
   if (typeof identifier.type !== 'string' || !identifier.type) {
     throw new Error(`${context}: Resource identifier must have a non-empty 'type' string`);
+  }
+  
+  // Check if type is valid by checking if scope exists
+  if (scopes && !scopes[identifier.type]) {
+    throw new Error(`${context}: Unknown resource type '${identifier.type}'. No scope with this name exists.`);
   }
   
   if (!('id' in identifier)) {
@@ -30,10 +36,11 @@ function validateResourceIdentifier(identifier, context) {
  * Validates a relationship object
  * @param {Object} relationship - The relationship to validate
  * @param {string} relationshipName - Name of the relationship for error context
+ * @param {Object} scopes - The scopes proxy object to check if type exists
  * @returns {boolean} True if valid
  * @throws {Error} If validation fails
  */
-function validateRelationship(relationship, relationshipName) {
+function validateRelationship(relationship, relationshipName, scopes = null) {
   if (!relationship || typeof relationship !== 'object') {
     throw new Error(`Relationship '${relationshipName}' must be an object`);
   }
@@ -51,7 +58,7 @@ function validateRelationship(relationship, relationshipName) {
   
   // data can be a single resource identifier (to-one)
   if (!Array.isArray(data)) {
-    validateResourceIdentifier(data, `Relationship '${relationshipName}'`);
+    validateResourceIdentifier(data, `Relationship '${relationshipName}'`, scopes);
     return true;
   }
   
@@ -61,7 +68,7 @@ function validateRelationship(relationship, relationshipName) {
   }
   
   data.forEach((identifier, index) => {
-    validateResourceIdentifier(identifier, `Relationship '${relationshipName}[${index}]'`);
+    validateResourceIdentifier(identifier, `Relationship '${relationshipName}[${index}]'`, scopes);
   });
   
   return true;
@@ -128,10 +135,11 @@ export function validateGetPayload(params) {
 /**
  * Validates query parameters for collection requests
  * @param {Object} params - The parameters object
+ * @param {string[]} sortableFields - Array of fields that can be sorted
  * @returns {boolean} True if valid
  * @throws {Error} If validation fails
  */
-export function validateQueryPayload(params) {
+export function validateQueryPayload(params, sortableFields = []) {
   if (!params || typeof params !== 'object') {
     throw new Error('Query parameters must be an object');
   }
@@ -187,6 +195,12 @@ export function validateQueryPayload(params) {
         if (typeof field !== 'string') {
           throw new Error(`queryParams.sort[${index}] must be a string`);
         }
+        
+        // Check if field is sortable (remove leading - for descending sort)
+        const fieldName = field.startsWith('-') ? field.substring(1) : field;
+        if (sortableFields.length > 0 && !sortableFields.includes(fieldName)) {
+          throw new Error(`Field '${fieldName}' is not sortable. Sortable fields are: ${sortableFields.join(', ')}`);
+        }
       });
     }
     
@@ -221,10 +235,11 @@ export function validateQueryPayload(params) {
 /**
  * Validates a JSON:API document for POST requests
  * @param {Object} inputRecord - The JSON:API document to validate
+ * @param {Object} scopes - The scopes proxy object to check if type exists
  * @returns {boolean} True if valid
  * @throws {Error} If validation fails
  */
-export function validatePostPayload(inputRecord) {
+export function validatePostPayload(inputRecord, scopes = null) {
   if (!inputRecord || typeof inputRecord !== 'object') {
     throw new Error('POST request body must be a JSON:API document object');
   }
@@ -243,6 +258,11 @@ export function validatePostPayload(inputRecord) {
   
   if (typeof data.type !== 'string' || !data.type) {
     throw new Error('POST request "data" must have a non-empty "type" string');
+  }
+  
+  // Check if primary resource type is valid
+  if (scopes && !scopes[data.type]) {
+    throw new Error(`POST request "data.type" '${data.type}' is not a valid resource type. No scope with this name exists.`);
   }
   
   // For POST, id is optional (server may generate it)
@@ -264,7 +284,7 @@ export function validatePostPayload(inputRecord) {
     }
     
     Object.entries(data.relationships).forEach(([relName, relationship]) => {
-      validateRelationship(relationship, relName);
+      validateRelationship(relationship, relName, scopes);
     });
   }
   
@@ -281,6 +301,11 @@ export function validatePostPayload(inputRecord) {
       
       if (typeof resource.type !== 'string' || !resource.type) {
         throw new Error(`POST request "included[${index}]" must have a non-empty "type" string`);
+      }
+      
+      // Check if included resource type is valid
+      if (scopes && !scopes[resource.type]) {
+        throw new Error(`POST request "included[${index}].type" '${resource.type}' is not a valid resource type. No scope with this name exists.`);
       }
       
       if (!('id' in resource) || resource.id === null || resource.id === undefined) {
@@ -305,10 +330,11 @@ export function validatePostPayload(inputRecord) {
 /**
  * Validates a JSON:API document for PUT requests
  * @param {Object} inputRecord - The JSON:API document to validate
+ * @param {Object} scopes - The scopes proxy object to check if type exists
  * @returns {boolean} True if valid
  * @throws {Error} If validation fails
  */
-export function validatePutPayload(inputRecord) {
+export function validatePutPayload(inputRecord, scopes = null) {
   if (!inputRecord || typeof inputRecord !== 'object') {
     throw new Error('PUT request body must be a JSON:API document object');
   }
@@ -332,6 +358,11 @@ export function validatePutPayload(inputRecord) {
   
   if (typeof data.type !== 'string' || !data.type) {
     throw new Error('PUT request "data" must have a non-empty "type" string');
+  }
+  
+  // Check if resource type is valid
+  if (scopes && !scopes[data.type]) {
+    throw new Error(`PUT request "data.type" '${data.type}' is not a valid resource type. No scope with this name exists.`);
   }
   
   // For PUT, id is required
@@ -361,7 +392,7 @@ export function validatePutPayload(inputRecord) {
     }
     
     Object.entries(data.relationships).forEach(([relName, relationship]) => {
-      validateRelationship(relationship, relName);
+      validateRelationship(relationship, relName, scopes);
     });
   }
   
@@ -371,10 +402,11 @@ export function validatePutPayload(inputRecord) {
 /**
  * Validates a JSON:API document for PATCH requests
  * @param {Object} inputRecord - The JSON:API document to validate
+ * @param {Object} scopes - The scopes proxy object to check if type exists
  * @returns {boolean} True if valid
  * @throws {Error} If validation fails
  */
-export function validatePatchPayload(inputRecord) {
+export function validatePatchPayload(inputRecord, scopes = null) {
   if (!inputRecord || typeof inputRecord !== 'object') {
     throw new Error('PATCH request body must be a JSON:API document object');
   }
@@ -398,6 +430,11 @@ export function validatePatchPayload(inputRecord) {
   
   if (typeof data.type !== 'string' || !data.type) {
     throw new Error('PATCH request "data" must have a non-empty "type" string');
+  }
+  
+  // Check if resource type is valid
+  if (scopes && !scopes[data.type]) {
+    throw new Error(`PATCH request "data.type" '${data.type}' is not a valid resource type. No scope with this name exists.`);
   }
   
   // For PATCH, id is required
@@ -432,7 +469,7 @@ export function validatePatchPayload(inputRecord) {
     }
     
     Object.entries(data.relationships).forEach(([relName, relationship]) => {
-      validateRelationship(relationship, relName);
+      validateRelationship(relationship, relName, scopes);
     });
   }
   

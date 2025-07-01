@@ -10,15 +10,22 @@ import {
 export const RestApiPlugin = {
   name: 'rest-api',
 
-  /*
-  static get sortableFields () { return [] }
-  static get defaultSort () { return null } // If set, it will be applied to all getQuery calls
-
-  static get searchSchema () { return null } // If not set, worked out from `schema` by constructor
-  static get idProperty () { return null } // If not set, taken as last item of paramIds)
+  /* Features implemented:
+  Vars (global/scope-configurable):
+  - sortableFields: Array of fields that can be sorted (default: [])
+  - defaultSort: Default sort order applied when none specified (default: null)
+  - idProperty: Property name for the ID field (default: 'id')
+  
+  Scope-only options:
+  - searchSchema: Schema for validating filter parameters (falls back to scope's main schema)
   */
 
   install({ helpers, addScopeMethod, vars, addHook, apiOptions, pluginOptions }) {
+
+    // Initialize default vars for the plugin
+    vars.sortableFields = vars.sortableFields || [];
+    vars.defaultSort = vars.defaultSort || null;
+    vars.idProperty = vars.idProperty || 'id';
 
     addScopeMethod('enrichAttributes', async ({ params, context, vars, helpers, scope, scopes, runHooks, apiOptions, pluginOptions, scopeOptions, scopeName }) => {
       
@@ -183,15 +190,56 @@ export const RestApiPlugin = {
       params.queryParams.sort = params.queryParams.sort || []
       params.queryParams.page = params.queryParams.page || {}
 
-      // Check payload
-      validateQueryPayload(params);
+      // Get scope-specific or global configuration
+      const sortableFields = scopeOptions.sortableFields || vars.sortableFields;
+      const defaultSort = scopeOptions.defaultSort || vars.defaultSort;
+      const idProperty = scopeOptions.idProperty || vars.idProperty;
+
+      // Apply default sort if no sort specified
+      if (params.queryParams.sort.length === 0 && defaultSort) {
+        params.queryParams.sort = Array.isArray(defaultSort) ? defaultSort : [defaultSort];
+      }
+
+      // Check payload with sortable fields validation
+      validateQueryPayload(params, sortableFields);
+
+      // Validate search/filter parameters against searchSchema
+      if (params.queryParams.filter && Object.keys(params.queryParams.filter).length > 0) {
+        // Use searchSchema if defined, otherwise fall back to the main schema
+        const schemaToValidate = scopeOptions.searchSchema || scopeOptions.schema;
+        
+        if (schemaToValidate) {
+          // Create a schema instance for validation
+          const filterSchema = new CreateSchema(schemaToValidate);
+          
+          // Validate the filter parameters
+          const { validatedObject, errors } = await filterSchema.validate(params.queryParams.filter, { 
+            onlyObjectValues: true // Partial validation for filters
+          });
+          
+          // If there are validation errors, throw an error
+          if (Object.keys(errors).length > 0) {
+            const errorMessages = Object.entries(errors)
+              .map(([field, error]) => `${field}: ${error.message}`)
+              .join(', ');
+            throw new Error(`Invalid filter parameters: ${errorMessages}`);
+          }
+          
+          // Replace filter with validated/transformed values
+          params.queryParams.filter = validatedObject;
+        }
+      }
       
       runHooks('checkPermissions')
       runHooks('checkPermissionsQuery')
       
       runHooks('beforeData')
       runHooks('beforeDataQuery')
-      context.record = await helpers.dataQuery({scopeName, id: params.id, queryParams: params.queryParams })
+      context.record = await helpers.dataQuery({
+        scopeName, 
+        queryParams: params.queryParams,
+        idProperty: vars.idProperty
+      })
     
       // Make a backup
       context.originalRecord = structuredClone(context.record)
@@ -299,7 +347,12 @@ export const RestApiPlugin = {
       
       runHooks('beforeData')
       runHooks('beforeDataGet')
-      context.record = await helpers.dataGet({scopeName, id: params.id, queryParams: params.queryParams })
+      context.record = await helpers.dataGet({
+        scopeName, 
+        id: params.id, 
+        queryParams: params.queryParams,
+        idProperty: vars.idProperty
+      })
     
       runHooks('checkDataPermissions')
       runHooks('checkDataPermissionsGet')
@@ -467,8 +520,13 @@ export const RestApiPlugin = {
       context.inputRecord = params.inputRecord
       context.queryParams = params.queryParams
 
-      // Check payload
-      validatePostPayload(params.inputRecord)
+      // Check payload with scope validation
+      validatePostPayload(params.inputRecord, scopes)
+      
+      // Validate that the resource type matches the current scope
+      if (params.inputRecord.data.type !== scopeName) {
+        throw new Error(`Resource type mismatch. Expected '${scopeName}' but got '${params.inputRecord.data.type}'`);
+      }
 
       // Create schema for validation
       context.schema = CreateSchema(scopeOptions.insertSchema || scopeOptions.schema || {})
@@ -488,10 +546,8 @@ export const RestApiPlugin = {
       context.schemas = {}
       for (const subInputRecord of (context.inputRecord.included || [])) {
         const scopeConfig = scopes[subInputRecord.type];
-        if (!scopeConfig) {
-          throw new Error(`Unknown resource type in included: ${subInputRecord.type}`);
-        }
-        const schemaFromOptions = scopeConfig.options?.insertSchema || scopeConfig.options?.schema || {};
+        // The validator already checked that the type exists, so scopeConfig should be valid
+        const schemaFromOptions = scopeConfig?.options?.insertSchema || scopeConfig?.options?.schema || {};
         const schema = context.schemas[subInputRecord.type] = context.schemas[subInputRecord.type] || CreateSchema(schemaFromOptions);
         
         const { validatedObject: subValidatedAttrs, errors: subErrors } = await schema.validate(subInputRecord.attributes || {});
@@ -514,7 +570,8 @@ export const RestApiPlugin = {
         schema: context.schema,
         record: context.record,
         relationships: params.relationships,
-        included: params.included
+        included: params.included,
+        idProperty: vars.idProperty
       });
       
       // Get the return record
@@ -524,7 +581,8 @@ export const RestApiPlugin = {
           schema: context.schema,
           record: context.record,
           fields: params.queryParams.fields,
-          include: params.queryParams.include
+          include: params.queryParams.include,
+          idProperty: vars.idProperty
         });
       }       
       
@@ -714,13 +772,19 @@ export const RestApiPlugin = {
       throw new Error('PUT requests cannot include an "included" array for creating new resources');
     }
 
-    // Validate payload. 
-    validatePutPayload(context.inputRecord)
+    // Validate payload with scope validation
+    validatePutPayload(context.inputRecord, scopes)
+    
+    // Validate that the resource type matches the current scope
+    if (context.inputRecord.data.type !== scopeName) {
+      throw new Error(`Resource type mismatch. Expected '${scopeName}' but got '${context.inputRecord.data.type}'`);
+    }
 
     if (vars.loadRecordOnPut) {
       context.recordBefore = await helpers.dataGet({
         scopeName,
-        id: context.id
+        id: context.id,
+        idProperty: vars.idProperty
       });
 
       context.exists = !!context.recordBefore
@@ -728,7 +792,8 @@ export const RestApiPlugin = {
       // CHECK EXISTENCE FIRST - hooks need to know!
       context.exists = await helpers.dataExists({
         scopeName,
-        id: context.id
+        id: context.id,
+        idProperty: vars.idProperty
       });
     }
     context.isCreate = !context.exists;
@@ -765,7 +830,8 @@ export const RestApiPlugin = {
       id: context.id,
       schema: context.schema,
       inputRecord: context.inputRecord,
-      isCreate: context.isCreate  // Helper knows what to do
+      isCreate: context.isCreate,  // Helper knows what to do
+      idProperty: vars.idProperty
     });
     runHooks('afterDataCallPut')
     runHooks('afterDataCall')
@@ -784,7 +850,8 @@ export const RestApiPlugin = {
         id: context.id,
         schema: context.schema,
         fields: params.queryParams.fields,
-        include: params.queryParams.include
+        include: params.queryParams.include,
+        idProperty: vars.idProperty
       });
     }
 
@@ -952,7 +1019,12 @@ export const RestApiPlugin = {
         throw new Error('PATCH requests cannot include an "included" array for creating new resources');
       }
 
-      validatePatchPayload(params.inputRecord)
+      validatePatchPayload(params.inputRecord, scopes)
+      
+      // Validate that the resource type matches the current scope
+      if (params.inputRecord.data.type !== scopeName) {
+        throw new Error(`Resource type mismatch. Expected '${scopeName}' but got '${params.inputRecord.data.type}'`);
+      }
 
       // Create schema for validation
       context.schema = CreateSchema(scopeOptions.updateSchema || scopeOptions.schema || {})
@@ -992,7 +1064,8 @@ export const RestApiPlugin = {
         scopeName,
         id: context.id,
         schema: context.schema,
-        inputRecord: context.inputRecord
+        inputRecord: context.inputRecord,
+        idProperty: vars.idProperty
       });
 
       runHooks('afterDataCallPatch')
@@ -1008,7 +1081,8 @@ export const RestApiPlugin = {
           id: context.id,
           schema: context.schema,
           fields: params.queryParams.fields,
-          include: params.queryParams.include
+          include: params.queryParams.include,
+          idProperty: vars.idProperty
         });
       }
 
@@ -1069,7 +1143,8 @@ export const RestApiPlugin = {
       // Call the storage helper
       await helpers.dataDelete({
         scopeName,
-        id: context.id
+        id: context.id,
+        idProperty: vars.idProperty
       });
       
       runHooks('afterDataCallDelete')
@@ -1117,11 +1192,14 @@ export const RestApiPlugin = {
 
 
     // Add REST API configuration
-    vars.pageSize = pluginOptions['rest-api']?.pageSize || 20,
-    vars.maxPageSize = pluginOptions['rest-api']?.maxPageSize || 100,
+    vars.pageSize = pluginOptions['rest-api']?.pageSize || 20
+    vars.maxPageSize = pluginOptions['rest-api']?.maxPageSize || 100
     vars.idProperty = pluginOptions['rest-api']?.idProperty || 'id'
     vars.loadRecordOnPut = !!pluginOptions['rest-api']?.loadRecordOnPut
-  
+    
+    // Sorting configuration
+    vars.sortableFields = pluginOptions['rest-api']?.sortableFields || []
+    vars.defaultSort = pluginOptions['rest-api']?.defaultSort || null
     
     vars.returnFullRecord = {
       put: false,

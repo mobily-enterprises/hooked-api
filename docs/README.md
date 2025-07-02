@@ -1219,6 +1219,180 @@ When building APIs with hooked-api, follow these security best practices:
    }
    ```
 
+## Event System
+
+In addition to hooks (which intercept and modify behavior of methors), Hooked API provides an event system for lifecycle notifications  to the API itself. Events are simpler than hooks - they notify about system changes but cannot modify behavior or stop execution.
+
+### Events vs Hooks
+
+| Aspect | Hooks | Events |
+|--------|-------|---------|
+| **Purpose** | Modify behavior during execution | Notify about system changes |
+| **Can stop execution** | Yes (return false) | No |
+| **Error handling** | Errors propagate and stop execution | Errors are logged but isolated |
+| **Use cases** | Validation, transformation, cancellation | Logging, synchronization, monitoring |
+| **Context** | Full method context with params | Simpler event-specific data |
+
+### Available Events
+
+The following system events are emitted:
+
+- `scope:added` - When a new scope is added to the API
+- `method:api:added` - When a new API method is added
+- `method:scope:added` - When a new scope method is added
+- `plugin:installed` - When a plugin is successfully installed
+
+### Using Events in Plugins
+
+Plugins can register event listeners using the `on` method:
+
+```javascript
+const LoggingPlugin = {
+  name: 'logging-plugin',
+  
+  install({ on, log }) {
+    // Listen for scope creation
+    on('scope:added', 'logNewScope', ({ eventData }) => {
+      log.info(`New scope created: ${eventData.scopeName}`);
+    });
+    
+    // Listen for plugin installations
+    on('plugin:installed', 'logPlugin', ({ eventData }) => {
+      log.info(`Plugin installed: ${eventData.pluginName}`);
+    });
+  }
+};
+```
+
+### Event Handler Context
+
+Event handlers receive a context object with:
+
+```javascript
+{
+  eventName: 'scope:added',        // The event that was triggered
+  eventData: {                     // Event-specific data
+    scopeName: 'users',
+    scopeOptions: { ... },
+    // ... other event-specific fields
+  },
+  api: {                          // API access
+    vars: { ... },                // API variables (proxy)
+    helpers: { ... },             // API helpers (proxy)
+    scopes: { ... },              // All scopes
+    options: { ... },             // API options (frozen)
+    pluginOptions: { ... }        // Plugin options (frozen)
+  },
+  log: { ... }                    // Logger for this event context
+}
+```
+
+### Practical Event Examples
+
+#### Auto-Configuration Plugin
+
+Automatically configure new scopes as they're added:
+
+```javascript
+const AutoConfigPlugin = {
+  name: 'auto-config',
+  
+  install({ on, addHook }) {
+    on('scope:added', 'configureScope', ({ eventData, api }) => {
+      const { scopeName } = eventData;
+      
+      // Add scope-specific configuration
+      api.vars[`${scopeName}CacheTimeout`] = 5000;
+      
+      // Log the configuration
+      console.log(`Auto-configured scope: ${scopeName}`);
+    });
+  }
+};
+```
+
+#### Cross-Plugin Communication
+
+React to other plugins being installed:
+
+```javascript
+const IntegrationPlugin = {
+  name: 'integration-plugin',
+  
+  install({ on, vars }) {
+    on('plugin:installed', 'integrateWithPlugin', ({ eventData }) => {
+      // React to specific plugins
+      if (eventData.pluginName === 'auth-plugin') {
+        console.log('Auth plugin detected, enabling authentication features');
+        vars.authEnabled = true;
+      }
+    });
+  }
+};
+```
+
+#### Monitoring Plugin
+
+Track all API changes for auditing:
+
+```javascript
+const MonitoringPlugin = {
+  name: 'monitoring-plugin',
+  
+  install({ on }) {
+    const changes = [];
+    
+    // Track all system changes
+    on('scope:added', 'trackScope', ({ eventData }) => {
+      changes.push({ type: 'scope', name: eventData.scopeName, time: Date.now() });
+    });
+    
+    on('method:api:added', 'trackApiMethod', ({ eventData }) => {
+      changes.push({ type: 'api-method', name: eventData.methodName, time: Date.now() });
+    });
+    
+    on('method:scope:added', 'trackScopeMethod', ({ eventData }) => {
+      changes.push({ type: 'scope-method', name: eventData.methodName, time: Date.now() });
+    });
+    
+    // Expose the audit log
+    api.getAuditLog = () => changes;
+  }
+};
+```
+
+### Error Handling
+
+Event handler errors are isolated and logged but don't break execution:
+
+```javascript
+const SafePlugin = {
+  name: 'safe-plugin',
+  
+  install({ on }) {
+    on('scope:added', 'mightFail', ({ eventData }) => {
+      if (eventData.scopeName === 'special') {
+        throw new Error('This error is logged but isolated');
+      }
+      console.log('Normal processing continues');
+    });
+  }
+};
+
+// Usage - the error doesn't stop scope creation
+api.use(SafePlugin);
+api.addScope('special');  // Error is logged, but scope is still created
+api.addScope('normal');   // Processes normally
+```
+
+### Best Practices
+
+1. **Use events for notifications, not control flow** - Events cannot stop or modify operations
+2. **Keep event handlers lightweight** - They run synchronously and can impact performance
+3. **Handle errors gracefully** - Event errors are logged but isolated
+4. **Don't modify critical state** - Use hooks for state modifications that affect behavior
+5. **Consider event ordering** - Listeners execute in registration order
+
 ## API Registry and Versioning
 
 Hooked API includes a global registry that tracks all API instances by name and version. This enables powerful versioning capabilities and allows different parts of your application to access specific API versions.

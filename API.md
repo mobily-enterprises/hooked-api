@@ -186,6 +186,10 @@ install: ({
   addHook,            // Special function that auto-injects plugin name:
                       // addHook(hookName, functionName, hookOptions, handler)
   
+  // Event management
+  on,                 // Register event listeners:
+                      // on(eventName, listenerName, handler)
+  
   // Data access
   vars,               // Variables proxy (mutable)
   helpers,            // Helpers proxy (mutable)
@@ -243,6 +247,167 @@ api.use(myPlugin, {
 async ({ pluginOptions }) => {
   const options = pluginOptions.myPlugin; // { apiKey: 'custom-key', ... }
 }
+```
+
+## Event System
+
+### Overview
+
+The event system provides lifecycle notifications separate from the hook system. While hooks intercept and can modify behavior, events are fire-and-forget notifications about system changes.
+
+### Event Registration
+
+Plugins can register event listeners using the `on` method in their install context:
+
+```javascript
+const myPlugin = {
+  name: 'my-plugin',
+  install({ on }) {
+    // on(eventName, listenerName, handler)
+    on('scope:added', 'handleNewScope', async (eventContext) => {
+      console.log(`Scope ${eventContext.eventData.scopeName} was added`);
+    });
+  }
+};
+```
+
+### Event Handler Context
+
+Event handlers receive a context object with:
+
+```javascript
+{
+  eventName: string,        // The event that was triggered
+  eventData: Object,        // Event-specific data (see events below)
+  api: {                    // Read-only API access
+    vars: Proxy,            // API variables (proxy)
+    helpers: Proxy,         // API helpers (proxy)
+    scopes: Proxy,          // All scopes
+    options: Object,        // Frozen API options
+    pluginOptions: Object   // Frozen plugin options
+  },
+  log: Logger              // Context-specific logger
+}
+```
+
+### Available Events
+
+#### `scope:added`
+Emitted after a scope is successfully added to the API.
+
+```javascript
+eventData: {
+  scopeName: string,      // Name of the added scope
+  scopeOptions: Object,   // Options passed to addScope
+  scopeExtras: Object     // Extras (hooks, methods, etc.) passed to addScope
+}
+```
+
+#### `method:api:added`
+Emitted after an API method is added.
+
+```javascript
+eventData: {
+  methodName: string,     // Name of the added method
+  handler: Function       // The method handler function
+}
+```
+
+#### `method:scope:added`
+Emitted after a scope method template is added.
+
+```javascript
+eventData: {
+  methodName: string,     // Name of the added method
+  handler: Function       // The method handler function
+}
+```
+
+#### `plugin:installed`
+Emitted after a plugin is successfully installed.
+
+```javascript
+eventData: {
+  pluginName: string,     // Name of the installed plugin
+  pluginOptions: Object,  // Options passed to api.use()
+  plugin: Object          // The plugin object itself
+}
+```
+
+### Event System Internals
+
+The event system uses three private methods on the Api instance:
+
+#### `_on(eventName, pluginName, listenerName, handler)`
+Registers an event listener. Called automatically by the plugin install context's `on` method.
+
+#### `_emit(eventName, eventData)`
+Emits an event to all registered listeners. Called internally when system changes occur.
+
+#### `_removeListener(eventName, listenerName)`
+Removes a specific event listener. Returns true if the listener was found and removed.
+
+### Error Handling
+
+Event handler errors are isolated - they are logged but don't propagate or stop execution:
+
+```javascript
+on('scope:added', 'mightFail', async ({ eventData }) => {
+  throw new Error('This error is logged but does not stop scope creation');
+});
+```
+
+### Best Practices
+
+1. **Use unique listener names** - Makes debugging easier and allows specific removal
+2. **Keep handlers lightweight** - Events run synchronously and can impact performance
+3. **Don't rely on event ordering** - While listeners execute in registration order, this shouldn't be depended upon
+4. **Use events for side effects only** - Events cannot cancel operations or modify behavior
+5. **Access API state read-only** - While `api.vars` is technically mutable, avoid modifications that affect core behavior
+
+### Example: Comprehensive Event Plugin
+
+```javascript
+const EventMonitorPlugin = {
+  name: 'event-monitor',
+  
+  install({ on, addApiMethod, vars }) {
+    // Initialize tracking
+    vars.eventLog = [];
+    
+    // Register for all events
+    on('scope:added', 'logScope', ({ eventData, api }) => {
+      api.vars.eventLog.push({
+        type: 'scope',
+        name: eventData.scopeName,
+        timestamp: Date.now()
+      });
+    });
+    
+    on('method:api:added', 'logApiMethod', ({ eventData, api }) => {
+      api.vars.eventLog.push({
+        type: 'api-method',
+        name: eventData.methodName,
+        timestamp: Date.now()
+      });
+    });
+    
+    on('plugin:installed', 'logPlugin', ({ eventData, api }) => {
+      if (eventData.pluginName !== 'event-monitor') {
+        api.vars.eventLog.push({
+          type: 'plugin',
+          name: eventData.pluginName,
+          timestamp: Date.now()
+        });
+      }
+    });
+    
+    // Expose the event log
+    addApiMethod('getEventLog', async ({ vars }) => {
+      return vars.eventLog;
+    });
+  }
+};
 ```
 
 ## Testing

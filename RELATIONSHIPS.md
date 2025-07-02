@@ -6,7 +6,7 @@ This guide provides a comprehensive explanation of how relationships work in the
 1. [Core Concepts](#core-concepts)
 2. [Example Database Schema](#example-database-schema)
 3. [Schema Definitions](#schema-definitions)
-4. [Understanding comingFrom Relationships](#understanding-comingFrom-relationships)
+4. [Understanding belongsTo Relationships](#understanding-belongsTo-relationships)
 5. [Understanding hasMany Relationships](#understanding-hasmany-relationships)
 6. [Understanding hasOne Relationships](#understanding-hasone-relationships)
 7. [Many-to-Many Relationships Deep Dive](#many-to-many-relationships-deep-dive)
@@ -24,7 +24,7 @@ The Hooked API REST plugin follows these fundamental principles:
 
 ### Key Terms
 
-- **comingFrom**: A relationship where the foreign key is IN THIS table
+- **belongsTo**: A relationship where the foreign key is IN THIS table
 - **hasMany**: A relationship where the foreign key is in ANOTHER table (expects multiple related records)
 - **hasOne**: A relationship where the foreign key is in ANOTHER table (expects one related record)
 - **through**: Specifies a join table for many-to-many relationships
@@ -128,9 +128,9 @@ const articlesSchema = {
   published_at: { type: 'dateTime', nullable: true },
   view_count: { type: 'number', default: 0 },
   
-  // Foreign key columns (comingFrom relationships)
-  author_id: { comingFrom: 'people', as: 'author' },
-  editor_id: { comingFrom: 'people', as: 'editor', nullable: true }
+  // Foreign key columns (belongsTo relationships)
+  author_id: { belongsTo: 'people', as: 'author' },
+  editor_id: { belongsTo: 'people', as: 'editor', nullable: true }
 }
 ```
 
@@ -142,10 +142,10 @@ const commentsSchema = {
   body: { type: 'string', required: true },
   created_at: { type: 'dateTime', default: 'CURRENT_TIMESTAMP' },
   
-  // Foreign key columns (comingFrom relationships)
-  article_id: { comingFrom: 'articles' },
-  user_id: { comingFrom: 'people', as: 'user' },
-  parent_comment_id: { comingFrom: 'comments', as: 'parent', nullable: true }
+  // Foreign key columns (belongsTo relationships)
+  article_id: { belongsTo: 'articles' },
+  user_id: { belongsTo: 'people', as: 'user' },
+  parent_comment_id: { belongsTo: 'comments', as: 'parent', nullable: true }
 }
 ```
 
@@ -169,9 +169,34 @@ const imagesSchema = {
   alt_text: { type: 'string', nullable: true },
   
   // Foreign key columns
-  featured_article_id: { comingFrom: 'articles', as: 'featured_article', nullable: true },
-  uploaded_by: { comingFrom: 'people', as: 'uploader' }
+  featured_article_id: { belongsTo: 'articles', as: 'featured_article', nullable: true },
+  uploaded_by: { belongsTo: 'people', as: 'uploader' }
 }
+```
+
+## Using Different Table Names
+
+Sometimes your database table name doesn't match your scope name. You can specify a custom table name in the schema:
+
+```javascript
+// If your database table is named 'blog_posts' but you want the API endpoint to be 'articles'
+const articlesSchema = {
+  tableName: 'blog_posts',  // <-- Specify the actual database table name
+  
+  // Regular columns
+  id: { type: 'id' },
+  title: { type: 'string', required: true, max: 200 },
+  // ... rest of schema
+}
+
+// The API will use 'articles' as the scope name
+api.scope('articles', {
+  schema: articlesSchema,  // Contains tableName: 'blog_posts'
+  relationships: { /* ... */ }
+})
+
+// API endpoint: GET /articles
+// Database query: SELECT * FROM blog_posts
 ```
 
 ## Relationship Configuration
@@ -185,9 +210,7 @@ api.scope('articles', {
   relationships: {
     // hasMany - foreign key is in the comments table
     comments: { hasMany: 'comments' },
-
-QUESTION: SHOULD WE EVEN ALLOW IT?
-
+    
     // hasOne - foreign key is in the images table
     featured_image: { hasOne: 'images', foreignKey: 'featured_article_id' },
     
@@ -227,19 +250,53 @@ api.scope('tags', {
 })
 ```
 
-QUESTION: HOW DOES "THROUGH" KNOW WHAT THE OTHER INDEX IS, IF FOR EXAMPLE THE TABLE HAS MULTIPLE FIELDS?
+## Explicit Keys for Through Relationships
 
+When using many-to-many relationships with a join table, you can explicitly specify the foreign key columns:
 
+```javascript
+// Basic through relationship (uses conventions)
+tags: { hasMany: 'tags', through: 'article_tags' }
+// Assumes: article_tags.article_id and article_tags.tag_id
 
-## Understanding comingFrom Relationships
+// Explicit keys for non-standard column names
+categories: { 
+  hasMany: 'categories', 
+  through: 'post_categories',
+  foreignKey: 'post_id',      // Column in join table pointing to THIS table
+  otherKey: 'category_id'     // Column in join table pointing to OTHER table
+}
 
-A `comingFrom` relationship means the foreign key is IN THIS table. Let's examine how this works:
+// Example with a more complex join table
+api.scope('users', {
+  schema: usersSchema,
+  relationships: {
+    // User's roles with metadata in join table
+    roles: { 
+      hasMany: 'roles', 
+      through: 'user_roles',
+      foreignKey: 'user_id',
+      otherKey: 'role_id'
+    }
+  }
+})
+
+// The join table might have additional columns:
+// user_roles table:
+// | user_id | role_id | assigned_at | assigned_by |
+// |---------|---------|-------------|-------------|
+// | 1       | 3       | 2024-01-15  | 5           |
+```
+
+## Understanding belongsTo Relationships
+
+A `belongsTo` relationship means the foreign key is IN THIS table. Let's examine how this works:
 
 ### Example: Article belongs to Author
 
 In the articles schema:
 ```javascript
-author_id: { comingFrom: 'people', as: 'author' }
+author_id: { belongsTo: 'people', as: 'author' }
 ```
 
 This tells us:
@@ -601,7 +658,7 @@ SELECT * FROM articles WHERE id = 1;
 ```
 Result: Article #1 with author_id=1, editor_id=4
 
-#### Step 2: Process comingFrom relationships
+#### Step 2: Process belongsTo relationships
 The storage plugin identifies:
 - author_id = 1 → Will need to fetch person #1
 - editor_id = 4 → Will need to fetch person #4
@@ -764,15 +821,38 @@ VALUES (5, 1, NOW()), (5, 4, NOW());
 
 ## Storage Plugin Implementation
 
-Here's how a storage plugin should handle these relationships:
+Storage plugins receive helper functions that have access to the full API context, including scopes, schemas, and relationships. Here's how to access this configuration:
 
-### For comingFrom Relationships
+### Accessing Scope Configuration
+
+```javascript
+// In your storage plugin's helper functions
+helpers.dataGet = async function({ scopeName, id, queryParams, idProperty }) {
+  // Access scope configuration
+  const scope = this.scopes[scopeName];
+  const schema = scope.schema;
+  const relationships = scope.relationships;
+  const tableName = schema.tableName || scopeName;
+  
+  // Now you can use this information for your queries
+  const query = `SELECT * FROM ${tableName} WHERE ${idProperty} = ?`;
+  const article = await db.query(query, [id]);
+  
+  // ... rest of implementation
+};
+```
+
+### For belongsTo Relationships
 
 ```javascript
 // When fetching an article
-const article = await db.query('SELECT * FROM articles WHERE id = ?', [id]);
+const scope = this.scopes[scopeName];
+const schema = scope.schema;
+const tableName = schema.tableName || scopeName;
 
-// The comingFrom columns are already in the result
+const article = await db.query(`SELECT * FROM ${tableName} WHERE id = ?`, [id]);
+
+// The belongsTo columns are already in the result
 // article.author_id = 1
 // article.editor_id = 4
 
@@ -798,19 +878,25 @@ const users = await db.query('SELECT * FROM people WHERE id IN (?)', [userIds]);
 ### For Many-to-Many Relationships
 
 ```javascript
-// Get tags for an article
+// Get relationship configuration
+const relationship = scope.relationships.tags;
+const throughTable = relationship.through;
+const foreignKey = relationship.foreignKey || `${scopeName.slice(0, -1)}_id`; // Default: article_id
+const otherKey = relationship.otherKey || `${relationship.hasMany.slice(0, -1)}_id`; // Default: tag_id
+
+// Get tags for an article using explicit keys
 const tagRelations = await db.query(
-  'SELECT tag_id FROM article_tags WHERE article_id = ?',
+  `SELECT ${otherKey} FROM ${throughTable} WHERE ${foreignKey} = ?`,
   [articleId]
 );
-const tagIds = tagRelations.map(r => r.tag_id);
+const tagIds = tagRelations.map(r => r[otherKey]);
 const tags = await db.query('SELECT * FROM tags WHERE id IN (?)', [tagIds]);
 
-// Creating new relationships
-await db.query('DELETE FROM article_tags WHERE article_id = ?', [articleId]);
+// Creating new relationships with explicit keys
+await db.query(`DELETE FROM ${throughTable} WHERE ${foreignKey} = ?`, [articleId]);
 for (const tagId of newTagIds) {
   await db.query(
-    'INSERT INTO article_tags (article_id, tag_id) VALUES (?, ?)',
+    `INSERT INTO ${throughTable} (${foreignKey}, ${otherKey}) VALUES (?, ?)`,
     [articleId, tagId]
   );
 }
@@ -835,6 +921,75 @@ if (count > 1) {
 }
 ```
 
+### Complete Storage Plugin Example
+
+Here's a complete example of a storage plugin helper that uses all the configuration:
+
+```javascript
+// Example storage plugin
+export const MySQLStoragePlugin = {
+  name: 'mysql-storage',
+  
+  install({ helpers, apiOptions }) {
+    helpers.dataQuery = async function({ scopeName, queryParams, idProperty }) {
+      // Access full scope configuration
+      const scope = this.scopes[scopeName];
+      const schema = scope.schema;
+      const relationships = scope.relationships || {};
+      const tableName = schema.tableName || scopeName;
+      
+      // Build base query
+      let query = `SELECT * FROM ${tableName}`;
+      const params = [];
+      
+      // Handle filters if searchSchema is defined
+      if (queryParams.filter && scope.searchSchema) {
+        const whereConditions = [];
+        for (const [field, value] of Object.entries(queryParams.filter)) {
+          if (scope.searchSchema[field]) {
+            whereConditions.push(`${field} = ?`);
+            params.push(value);
+          }
+        }
+        if (whereConditions.length > 0) {
+          query += ` WHERE ${whereConditions.join(' AND ')}`;
+        }
+      }
+      
+      // Handle sorting
+      if (queryParams.sort && queryParams.sort.length > 0) {
+        const sortClauses = queryParams.sort.map(field => {
+          const desc = field.startsWith('-');
+          const fieldName = desc ? field.substring(1) : field;
+          return `${fieldName} ${desc ? 'DESC' : 'ASC'}`;
+        });
+        query += ` ORDER BY ${sortClauses.join(', ')}`;
+      }
+      
+      // Handle pagination
+      if (queryParams.page) {
+        const limit = queryParams.page.size || 20;
+        const offset = ((queryParams.page.number || 1) - 1) * limit;
+        query += ` LIMIT ${limit} OFFSET ${offset}`;
+      }
+      
+      // Execute query
+      const records = await db.query(query, params);
+      
+      // Convert to JSON:API format
+      return {
+        data: records.map(record => ({
+          type: scopeName,
+          id: String(record[idProperty]),
+          attributes: this.filterAttributes(record, schema),
+          relationships: this.buildRelationships(record, relationships)
+        }))
+      };
+    };
+  }
+};
+```
+
 ## Best Practices
 
 1. **Always validate foreign keys exist** before creating relationships
@@ -843,6 +998,8 @@ if (count > 1) {
 4. **Use UNIQUE constraints** for hasOne relationships
 5. **Be consistent** with naming conventions (e.g., always use `_id` suffix)
 6. **Document non-standard foreign keys** clearly in your schema
+7. **Use the tableName property** when your database table names don't match API scope names
+8. **Leverage the context object** (`this`) in storage plugins to access all scope configurations
 
 ## Summary
 

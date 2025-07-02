@@ -369,6 +369,9 @@ export class Api {
     
     /** Custom addScope method name (e.g., 'addTable' instead of 'addScope') */
     this._addScopeAlias = null
+    
+    /** Event listener storage: Map<eventName, Array<{pluginName, listenerName, handler}>> */
+    this._eventListeners = new Map()
    
     /**
      * Initialize the logging system
@@ -1367,6 +1370,151 @@ export class Api {
     return allSuccessful;
   }
 
+  /**
+   * Registers an event listener
+   * 
+   * @private
+   * @param {string} eventName - Name of the event (e.g., 'scope:added')
+   * @param {string} pluginName - Name of the plugin adding the listener
+   * @param {string} listenerName - Name of the listener function for debugging
+   * @param {Function} handler - The event handler function
+   * @returns {Api} This instance for chaining
+   * @throws {ValidationError} If parameters are invalid
+   * 
+   * Events are notifications about system lifecycle changes.
+   * Unlike hooks, events cannot modify behavior or stop execution.
+   */
+  _on(eventName, pluginName, listenerName, handler) {
+    // Validate parameters
+    if (!eventName?.trim()) {
+      throw new ValidationError(
+        `Event name must be a non-empty string. Received: ${eventName === undefined ? 'undefined' : eventName === null ? 'null' : `"${eventName}"`}`,
+        { field: 'eventName', value: eventName, validValues: 'non-empty string' }
+      );
+    }
+    if (!pluginName?.trim()) {
+      throw new ValidationError(
+        `Plugin name must be a non-empty string. Received: ${pluginName === undefined ? 'undefined' : pluginName === null ? 'null' : `"${pluginName}"`}`,
+        { field: 'pluginName', value: pluginName, validValues: 'non-empty string' }
+      );
+    }
+    if (!listenerName?.trim()) {
+      throw new ValidationError(
+        `Listener name must be a non-empty string. Received: ${listenerName === undefined ? 'undefined' : listenerName === null ? 'null' : `"${listenerName}"`}`,
+        { field: 'listenerName', value: listenerName, validValues: 'non-empty string' }
+      );
+    }
+    if (typeof handler !== 'function') {
+      throw new ValidationError(
+        `Event handler must be a function. Received: ${typeof handler}`,
+        { field: 'handler', value: handler, validValues: 'function' }
+      );
+    }
+
+    // Initialize listener array if needed
+    if (!this._eventListeners.has(eventName)) {
+      this._eventListeners.set(eventName, []);
+    }
+
+    // Add the listener
+    const listeners = this._eventListeners.get(eventName);
+    listeners.push({ pluginName, listenerName, handler });
+
+    this._logger.trace(`Event listener '${listenerName}' registered for '${eventName}'`, { plugin: pluginName });
+    return this;
+  }
+
+  /**
+   * Emits an event to all registered listeners
+   * 
+   * @private
+   * @param {string} eventName - Name of the event to emit
+   * @param {Object} eventData - Data to pass to event handlers
+   * @returns {Promise<void>}
+   * 
+   * Events are fire-and-forget notifications. They:
+   * - Run asynchronously but in sequence
+   * - Cannot stop execution or modify data
+   * - Log errors but don't propagate them
+   * - Provide a simpler context than hooks
+   */
+  async _emit(eventName, eventData = {}) {
+    const listeners = this._eventListeners.get(eventName) || [];
+    if (listeners.length === 0) {
+      this._logger.trace(`No listeners for event '${eventName}'`);
+      return;
+    }
+
+    this._logger.debug(`Emitting event '${eventName}'`, { listenerCount: listeners.length });
+
+    // Create event context - simpler than hook context
+    const log = this._createContextLogger(`event:${eventName}`);
+    const eventContext = {
+      eventName,
+      eventData,
+      api: {
+        vars: this._varsProxy,
+        helpers: this._helpersProxy,
+        scopes: this.scopes,
+        options: Object.freeze({ ...this._apiOptions }),
+        pluginOptions: Object.freeze({ ...this._pluginOptions })
+      },
+      log
+    };
+
+    // Execute listeners sequentially
+    for (const { pluginName, listenerName, handler } of listeners) {
+      const startTime = Date.now();
+      this._logger.trace(`Event listener '${listenerName}' starting`, { plugin: pluginName, event: eventName });
+
+      try {
+        await handler(eventContext);
+        const duration = Date.now() - startTime;
+        this._logger.trace(`Event listener '${listenerName}' completed`, { 
+          plugin: pluginName, 
+          event: eventName, 
+          duration: `${duration}ms` 
+        });
+      } catch (error) {
+        const duration = Date.now() - startTime;
+        // Log error but don't propagate - events shouldn't break execution
+        this._logger.error(`Event listener '${listenerName}' failed`, { 
+          plugin: pluginName, 
+          event: eventName, 
+          error: error.message, 
+          duration: `${duration}ms` 
+        });
+      }
+    }
+  }
+
+  /**
+   * Removes a specific event listener
+   * 
+   * @private
+   * @param {string} eventName - Name of the event
+   * @param {string} listenerName - Name of the listener to remove
+   * @returns {boolean} True if listener was found and removed
+   */
+  _removeListener(eventName, listenerName) {
+    const listeners = this._eventListeners.get(eventName);
+    if (!listeners) return false;
+
+    const initialLength = listeners.length;
+    const filtered = listeners.filter(l => l.listenerName !== listenerName);
+    
+    if (filtered.length < initialLength) {
+      if (filtered.length === 0) {
+        this._eventListeners.delete(eventName);
+      } else {
+        this._eventListeners.set(eventName, filtered);
+      }
+      this._logger.trace(`Event listener '${listenerName}' removed from '${eventName}'`);
+      return true;
+    }
+    
+    return false;
+  }
 
   /**
    * Adds a method directly to the API instance
@@ -1454,6 +1602,13 @@ export class Api {
     
     this._apiMethods.set(method, handler)
     this._logger.trace(`Added API method '${method}'`);
+    
+    // Emit event for plugins to react to method creation
+    this._emit('method:api:added', {
+      methodName: method,
+      handler: handler
+    });
+    
     return this
   }
 
@@ -1527,6 +1682,13 @@ export class Api {
     // Scope methods don't need property conflict checking since they're not on the main API
     this._scopeMethods.set(method, handler)
     this._logger.trace(`Added scope method '${method}'`);
+    
+    // Emit event for plugins to react to scope method creation
+    this._emit('method:scope:added', {
+      methodName: method,
+      handler: handler
+    });
+    
     return this
   }
 
@@ -1796,6 +1958,14 @@ export class Api {
     });
     
     this._logger.info(`Scope '${name}' added successfully`);
+    
+    // Emit event for plugins to react to scope creation
+    this._emit('scope:added', {
+      scopeName: name,
+      scopeOptions: options,
+      scopeExtras: extras
+    });
+    
     return this;
   }
 
@@ -2066,6 +2236,15 @@ export class Api {
         },
         
         /**
+         * Event listener registration for system lifecycle notifications
+         * Events are simpler than hooks - they notify but don't modify behavior
+         */
+        on: (eventName, listenerName, handler) => {
+          api._logger.trace(`Plugin '${plugin.name}' adding event listener '${listenerName}' for '${eventName}'`);
+          return api._on(eventName, plugin.name, listenerName, handler);
+        },
+        
+        /**
          * Data access - plugins can read/write vars and helpers
          * during installation
          */
@@ -2097,6 +2276,13 @@ export class Api {
       
       const duration = Date.now() - startTime;
       this._logger.info(`Plugin '${plugin.name}' installed successfully`, { duration: `${duration}ms` });
+      
+      // Emit event for other plugins to react to this plugin installation
+      this._emit('plugin:installed', {
+        pluginName: plugin.name,
+        pluginOptions: options,
+        plugin: plugin
+      });
     } catch (error) {
       const duration = Date.now() - startTime;
       this._logger.error(`Failed to install plugin '${plugin.name}'`, { error: error.message, duration: `${duration}ms` });

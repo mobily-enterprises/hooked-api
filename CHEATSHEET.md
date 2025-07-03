@@ -172,7 +172,7 @@ const myPlugin = {
   }
 };
 
-api.use(myPlugin);
+await api.use(myPlugin);
 ```
 
 ### Plugin with dependencies
@@ -200,7 +200,7 @@ const configPlugin = {
   }
 };
 
-api.use(configPlugin, { endpoint: 'https://api.example.com' });
+await api.use(configPlugin, { endpoint: 'https://api.example.com' });
 ```
 
 ## Variables and Helpers
@@ -330,7 +330,7 @@ beforeEach(() => {
 test('plugin adds method', async () => {
   const api = new Api({ name: 'test', version: '1.0.0' });
   
-  api.use({
+  await api.use({
     name: 'testPlugin',
     install: ({ addApiMethod }) => {
       addApiMethod('getValue', async () => 42);

@@ -237,7 +237,7 @@ export class MethodError extends HookedApiError {
  * ```javascript
  * const api = new Api({ name: 'my-api', version: '1.0.0' });
  * api.customize({ ... });  // Add methods, hooks, vars
- * api.use(plugin);         // Install plugins
+ * await api.use(plugin);   // Install plugins
  * api.addScope('users');   // Create scopes
  * ```
  */
@@ -2072,10 +2072,10 @@ export class Api {
    * 
    * @param {Object} plugin - Plugin object with name and install function
    * @param {string} plugin.name - Unique plugin identifier
-   * @param {Function} plugin.install - Installation function
+   * @param {Function} plugin.install - Installation function (can be async)
    * @param {string[]} [plugin.dependencies] - Required plugin names
    * @param {Object} [options={}] - Plugin-specific options
-   * @returns {Api} This instance for chaining
+   * @returns {Promise<Api>} This instance for chaining
    * @throws {PluginError} If plugin is invalid or dependencies missing
    * 
    * Plugins are the primary extension mechanism:
@@ -2085,7 +2085,7 @@ export class Api {
    * - Can add hooks, methods, scopes, vars, and helpers
    * 
    * Example:
-   * api.use({
+   * await api.use({
    *   name: 'auth',
    *   dependencies: ['session'],
    *   install: (ctx) => {
@@ -2094,7 +2094,7 @@ export class Api {
    *   }
    * })
    */
-  use(plugin, options = {}) {
+  async use(plugin, options = {}) {
     if (typeof plugin !== 'object' || plugin === null) {
       const received = plugin === undefined ? 'undefined' : 
                       plugin === null ? 'null' : 
@@ -2272,7 +2272,7 @@ export class Api {
        * Execute the plugin's install function
        * This is where the plugin sets up all its functionality
        */
-      plugin.install(installContext)
+      await plugin.install(installContext)
       
       // Mark plugin as installed to prevent duplicates and satisfy dependencies
       this._installedPlugins.add(plugin.name)

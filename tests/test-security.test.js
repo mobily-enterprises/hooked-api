@@ -223,25 +223,25 @@ test('Input validation and sanitization', async (t) => {
     }, ValidationError);
   });
 
-  await t.test('should validate plugin names', () => {
+  await t.test('should validate plugin names', async () => {
     const api = new Api({ name: 'plugin-validation', version: '1.0.0' });
     
     // Reserved names throw PluginError
-    assert.throws(() => {
-      api.use({ name: 'api', install: () => {} });
+    await assert.rejects(async () => {
+      await api.use({ name: 'api', install: () => {} });
     }, PluginError);
 
-    assert.throws(() => {
-      api.use({ name: 'scopes', install: () => {} });
+    await assert.rejects(async () => {
+      await api.use({ name: 'scopes', install: () => {} });
     }, PluginError);
 
     // Invalid structures throw PluginError (not ValidationError)
-    assert.throws(() => {
-      api.use({ name: 123, install: () => {} });
+    await assert.rejects(async () => {
+      await api.use({ name: 123, install: () => {} });
     }, PluginError);
 
-    assert.throws(() => {
-      api.use({ install: () => {} }); // Missing name
+    await assert.rejects(async () => {
+      await api.use({ install: () => {} }); // Missing name
     }, PluginError);
   });
 
@@ -334,7 +334,7 @@ test('Access control and isolation', async (t) => {
     assert.equal(api.options.name, 'frozen');
   });
 
-  await t.test('should isolate plugin contexts', () => {
+  await t.test('should isolate plugin contexts', async () => {
     const api = new Api({ name: 'plugin-isolation', version: '1.0.0' });
     const contexts = [];
 
@@ -356,8 +356,8 @@ test('Access control and isolation', async (t) => {
       }
     };
 
-    api.use(plugin1);
-    api.use(plugin2);
+    await api.use(plugin1);
+    await api.use(plugin2);
 
     // Contexts should be different
     assert.notEqual(contexts[0], contexts[1]);

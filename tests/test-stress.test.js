@@ -168,7 +168,7 @@ test('Stress test with large number of methods', async (t) => {
 
 // Test 2: Complex plugin dependency graphs
 test('Complex plugin dependency graphs', async (t) => {
-  await t.test('should handle diamond dependency pattern', () => {
+  await t.test('should handle diamond dependency pattern', async () => {
     const api = new Api({ name: 'diamond', version: '1.0.0' });
     const order = [];
 
@@ -197,16 +197,16 @@ test('Complex plugin dependency graphs', async (t) => {
     };
 
     // Must install in dependency order
-    api.use(pluginA);
-    api.use(pluginB);
-    api.use(pluginC);
-    api.use(pluginD);
+    await api.use(pluginA);
+    await api.use(pluginB);
+    await api.use(pluginC);
+    await api.use(pluginD);
 
     // Each plugin installed in order
     assert.deepEqual(order, ['A', 'B', 'C', 'D']);
   });
 
-  await t.test('should detect circular dependencies in complex graphs', () => {
+  await t.test('should detect circular dependencies in complex graphs', async () => {
     const api = new Api({ name: 'circular', version: '1.0.0' });
 
     // Create a complex circular dependency
@@ -215,12 +215,12 @@ test('Complex plugin dependency graphs', async (t) => {
     const pluginC = { name: 'C', dependencies: ['B'], install: () => {} };
 
     // Should fail on first plugin due to missing dependency C
-    assert.throws(() => api.use(pluginA), PluginError);
+    await assert.rejects(() => api.use(pluginA), PluginError);
     
-    assert.throws(() => api.use(pluginC), PluginError);
+    await assert.rejects(() => api.use(pluginC), PluginError);
   });
 
-  await t.test('should handle deep dependency chains', () => {
+  await t.test('should handle deep dependency chains', async () => {
     const api = new Api({ name: 'deep-deps', version: '1.0.0' });
     const plugins = [];
     const order = [];
@@ -236,14 +236,14 @@ test('Complex plugin dependency graphs', async (t) => {
 
     // Install in correct dependency order (0 -> 49)
     for (let i = 0; i < 50; i++) {
-      api.use(plugins[i]);
+      await api.use(plugins[i]);
     }
 
     // Should install in correct order
     assert.deepEqual(order, Array.from({ length: 50 }, (_, i) => i));
   });
 
-  await t.test('should handle missing transitive dependencies', () => {
+  await t.test('should handle missing transitive dependencies', async () => {
     const api = new Api({ name: 'transitive', version: '1.0.0' });
 
     const pluginA = { name: 'A', install: () => {} };
@@ -251,9 +251,9 @@ test('Complex plugin dependency graphs', async (t) => {
     const pluginC = { name: 'C', dependencies: ['B'], install: () => {} };
 
     // Install A and C but not B
-    api.use(pluginA);
+    await api.use(pluginA);
     
-    assert.throws(() => api.use(pluginC), PluginError);
+    await assert.rejects(() => api.use(pluginC), PluginError);
   });
 
   await t.test('should handle plugin options inheritance', async () => {
@@ -277,8 +277,8 @@ test('Complex plugin dependency graphs', async (t) => {
       }
     };
 
-    api.use(basePlugin, { baseOption: 'base-value' });
-    api.use(extendPlugin, { extendOption: 'extend-value' });
+    await api.use(basePlugin, { baseOption: 'base-value' });
+    await api.use(extendPlugin, { extendOption: 'extend-value' });
 
     const options = await api.getOptions();
 

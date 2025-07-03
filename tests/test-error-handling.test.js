@@ -22,12 +22,12 @@ test('Error Handling', async (t) => {
     }
   });
 
-  await t.test('should provide detailed plugin errors', () => {
+  await t.test('should provide detailed plugin errors', async () => {
     const api = new Api({ name: 'test', version: '1.0.0' });
     
     try {
-      api.use({ name: 'test-plugin', install: () => {} });
-      api.use({ name: 'test-plugin', install: () => {} }); // Duplicate
+      await api.use({ name: 'test-plugin', install: () => {} });
+      await api.use({ name: 'test-plugin', install: () => {} }); // Duplicate
     } catch (error) {
       assert.ok(error instanceof PluginError);
       assert.equal(error.code, 'PLUGIN_ERROR');
@@ -78,14 +78,14 @@ test('Error Handling', async (t) => {
     }
   });
 
-  await t.test('should handle null and undefined gracefully', () => {
+  await t.test('should handle null and undefined gracefully', async () => {
     const api = new Api({ name: 'test', version: '1.0.0' });
     
     // Various null/undefined checks
     assert.throws(() => api.addScope(null, {}), ValidationError);
     assert.throws(() => api.addScope(undefined, {}), ValidationError);
-    assert.throws(() => api.use(null), PluginError);
-    assert.throws(() => api.use(undefined), PluginError);
+    await assert.rejects(() => api.use(null), PluginError);
+    await assert.rejects(() => api.use(undefined), PluginError);
   });
 
   await t.test('should prevent prototype pollution attacks', () => {

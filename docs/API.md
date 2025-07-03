@@ -250,10 +250,10 @@ install: ({
 
 ```javascript
 // Install a plugin
-api.use(myPlugin);
+await api.use(myPlugin);
 
 // Install with options
-api.use(myPlugin, {
+await api.use(myPlugin, {
   apiKey: 'custom-key',
   endpoint: 'https://api.example.com'
 });
@@ -468,7 +468,7 @@ test('myPlugin adds expected functionality', async () => {
     }
   };
   
-  api.use(myPlugin);
+  await api.use(myPlugin);
   
   const result = await api.getValue();
   expect(result).toBe('plugin-loaded');
@@ -507,7 +507,7 @@ Properties:
 Thrown when plugin operations fail (installation, dependencies, naming conflicts)
 ```javascript
 try {
-  api.use({ name: 'api' }); // Reserved name
+  await api.use({ name: 'api' }); // Reserved name
 } catch (error) {
   if (error instanceof PluginError) {
     console.log(error.code);             // 'PLUGIN_ERROR'

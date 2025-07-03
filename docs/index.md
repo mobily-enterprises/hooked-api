@@ -83,7 +83,7 @@ api.customize({
 });
 
 // Users can extend with plugins
-api.use({
+await api.use({
   name: 'TimestampPlugin',
   install: ({ addHook }) => {
     addHook('afterFetch', 'addTimestamp', {}, ({ context }) => {

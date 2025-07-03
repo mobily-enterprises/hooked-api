@@ -8,7 +8,7 @@ test.beforeEach(() => {
 });
 
 test('Plugin System', async (t) => {
-  await t.test('should install and use plugins', () => {
+  await t.test('should install and use plugins', async () => {
     const api = new Api({ name: 'test', version: '1.0.0' });
     let installed = false;
 
@@ -19,11 +19,11 @@ test('Plugin System', async (t) => {
       }
     };
 
-    api.use(testPlugin);
+    await api.use(testPlugin);
     assert.ok(installed);
   });
 
-  await t.test('should provide install context to plugins', () => {
+  await t.test('should provide install context to plugins', async () => {
     const api = new Api({ name: 'test', version: '1.0.0' });
     let capturedContext;
 
@@ -34,12 +34,41 @@ test('Plugin System', async (t) => {
       }
     };
 
-    api.use(testPlugin);
+    await api.use(testPlugin);
     
-    const expectedMethods = ['addApiMethod', 'addScopeMethod', 'addScope', 'setScopeAlias', 'addHook', 'vars', 'helpers', 'scopes', 'log', 'name', 'apiOptions', 'pluginOptions', 'context'];
+    const expectedMethods = ['addApiMethod', 'addScopeMethod', 'addScope', 'setScopeAlias', 'addHook', 'vars', 'helpers', 'scopes', 'log', 'name', 'apiOptions', 'pluginOptions', 'context', 'api'];
     for (const method of expectedMethods) {
       assert.ok(capturedContext.includes(method), `Missing method: ${method}`);
     }
+  });
+
+  await t.test('should provide api reference to plugins', async () => {
+    const api = new Api({ name: 'test', version: '1.0.0' });
+    let capturedApi;
+    let contextApi;
+
+    const testPlugin = {
+      name: 'test-plugin',
+      install: (context) => {
+        capturedApi = context.api;
+        contextApi = context;
+      }
+    };
+
+    await api.use(testPlugin);
+    
+    // Verify api property exists
+    assert.ok(capturedApi, 'api property should exist in install context');
+    
+    // Verify it's the same API instance
+    assert.equal(capturedApi, api, 'api property should be the same API instance');
+    
+    // Verify api has expected properties
+    assert.equal(capturedApi.options.name, 'test', 'api should have correct name');
+    assert.equal(capturedApi.options.version, '1.0.0', 'api should have correct version');
+    
+    // Verify api is accessible via context
+    assert.equal(contextApi.api, api, 'api should be accessible via context.api');
   });
 
   await t.test('should allow plugins to add API methods', async () => {
@@ -52,7 +81,7 @@ test('Plugin System', async (t) => {
       }
     };
 
-    api.use(methodPlugin);
+    await api.use(methodPlugin);
     const result = await api.pluginMethod();
     assert.equal(result, 'from plugin');
   });
@@ -69,12 +98,12 @@ test('Plugin System', async (t) => {
       }
     };
 
-    api.use(optionsPlugin, { test: 'value' });
+    await api.use(optionsPlugin, { test: 'value' });
     const result = await api.getOptions();
     assert.deepEqual(result, { test: 'value' });
   });
 
-  await t.test('should check plugin dependencies', () => {
+  await t.test('should check plugin dependencies', async () => {
     const api = new Api({ name: 'test', version: '1.0.0' });
 
     const dependentPlugin = {
@@ -83,13 +112,13 @@ test('Plugin System', async (t) => {
       install: () => {}
     };
 
-    assert.throws(
+    await assert.rejects(
       () => api.use(dependentPlugin),
       PluginError
     );
   });
 
-  await t.test('should prevent duplicate plugin installation', () => {
+  await t.test('should prevent duplicate plugin installation', async () => {
     const api = new Api({ name: 'test', version: '1.0.0' });
 
     const plugin = {
@@ -97,50 +126,50 @@ test('Plugin System', async (t) => {
       install: () => {}
     };
 
-    api.use(plugin);
-    assert.throws(
+    await api.use(plugin);
+    await assert.rejects(
       () => api.use(plugin),
       PluginError
     );
   });
 
-  await t.test('should validate plugin structure', () => {
+  await t.test('should validate plugin structure', async () => {
     const api = new Api({ name: 'test', version: '1.0.0' });
 
     // Missing name
-    assert.throws(
+    await assert.rejects(
       () => api.use({ install: () => {} }),
       PluginError
     );
 
     // Missing install
-    assert.throws(
+    await assert.rejects(
       () => api.use({ name: 'test' }),
       PluginError
     );
 
     // Invalid install type
-    assert.throws(
+    await assert.rejects(
       () => api.use({ name: 'test', install: 'not a function' }),
       PluginError
     );
   });
 
-  await t.test('should prevent reserved plugin names', () => {
+  await t.test('should prevent reserved plugin names', async () => {
     const api = new Api({ name: 'test', version: '1.0.0' });
 
-    assert.throws(
+    await assert.rejects(
       () => api.use({ name: 'api', install: () => {} }),
       PluginError
     );
 
-    assert.throws(
+    await assert.rejects(
       () => api.use({ name: 'scopes', install: () => {} }),
       PluginError
     );
   });
 
-  await t.test('should handle plugin installation errors', () => {
+  await t.test('should handle plugin installation errors', async () => {
     const api = new Api({ name: 'test', version: '1.0.0' });
 
     const errorPlugin = {
@@ -150,10 +179,64 @@ test('Plugin System', async (t) => {
       }
     };
 
-    assert.throws(
+    await assert.rejects(
       () => api.use(errorPlugin),
       PluginError
     );
+  });
+
+  await t.test('should allow plugins to use api reference for advanced functionality', async () => {
+    const api = new Api({ name: 'test', version: '1.0.0' });
+    
+    // First plugin creates a namespace
+    const namespacePlugin = {
+      name: 'namespace-plugin',
+      install: ({ api, addApiMethod }) => {
+        // Use api reference to access internal state
+        api._pluginNamespaces = api._pluginNamespaces || {};
+        api._pluginNamespaces['namespace-plugin'] = { data: [] };
+        
+        // Add method that uses the namespace
+        addApiMethod('addToNamespace', async ({ params }) => {
+          api._pluginNamespaces['namespace-plugin'].data.push(params);
+          return api._pluginNamespaces['namespace-plugin'].data.length;
+        });
+      }
+    };
+    
+    // Second plugin extends the first one using api reference
+    const extensionPlugin = {
+      name: 'extension-plugin',
+      dependencies: ['namespace-plugin'],
+      install: ({ api, addApiMethod }) => {
+        // Access the namespace created by first plugin
+        addApiMethod('getNamespaceData', async () => {
+          return api._pluginNamespaces['namespace-plugin'].data;
+        });
+        
+        // Check if specific methods exist on the api
+        addApiMethod('hasMethod', async ({ params }) => {
+          return typeof api[params] === 'function';
+        });
+      }
+    };
+    
+    await api.use(namespacePlugin);
+    await api.use(extensionPlugin);
+    
+    // Test the functionality
+    const count1 = await api.addToNamespace('item1');
+    assert.equal(count1, 1);
+    
+    const count2 = await api.addToNamespace('item2');
+    assert.equal(count2, 2);
+    
+    const data = await api.getNamespaceData();
+    assert.deepEqual(data, ['item1', 'item2']);
+    
+    // Test method checking
+    assert.equal(await api.hasMethod('addToNamespace'), true);
+    assert.equal(await api.hasMethod('nonExistentMethod'), false);
   });
 
   await t.test('should allow plugins to add hooks with auto-injected plugin name', async () => {
@@ -175,7 +258,7 @@ test('Plugin System', async (t) => {
       }
     };
 
-    api.use(hookPlugin);
+    await api.use(hookPlugin);
     const result = await api.runHookTest();
     assert.deepEqual(result, ['test']);
   });

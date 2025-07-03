@@ -8,14 +8,14 @@ const api = new Api({
 });
 
 // Install the REST API plugin
-api.use(RestApiPlugin, {
+await api.use(RestApiPlugin, {
   pageSize: 20,
   maxPageSize: 100,
   idProperty: 'id'
 });
 
 // Install a storage plugin (in-memory for this example)
-api.use(MemoryStoragePlugin);
+await api.use(MemoryStoragePlugin);
 
 // Add validation plugin
 const ValidationPlugin = {
@@ -65,7 +65,7 @@ const ValidationPlugin = {
   }
 };
 
-api.use(ValidationPlugin);
+await api.use(ValidationPlugin);
 
 // Add audit logging plugin
 const AuditPlugin = {
@@ -89,7 +89,7 @@ const AuditPlugin = {
   }
 };
 
-api.use(AuditPlugin, { user: 'john@example.com' });
+await api.use(AuditPlugin, { user: 'john@example.com' });
 
 // Add computed fields plugin
 const ComputedFieldsPlugin = {
@@ -111,7 +111,7 @@ const ComputedFieldsPlugin = {
   }
 };
 
-api.use(ComputedFieldsPlugin);
+await api.use(ComputedFieldsPlugin);
 
 // Define resources
 api.addResource('users', {

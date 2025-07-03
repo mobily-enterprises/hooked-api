@@ -466,7 +466,7 @@ test('Hook system edge cases', async (t) => {
     const api = new Api({ name: 'test', version: '1.0.0' });
     const order = [];
 
-    api.use({
+    await api.use({
       name: 'test-plugin',
       install: ({ addApiMethod, addHook }) => {
         addApiMethod('test', async ({ runHooks }) => {
@@ -535,7 +535,7 @@ test('Hook system edge cases', async (t) => {
 
 // Test 5: Plugin edge cases
 test('Plugin edge cases', async (t) => {
-  await t.test('should handle plugins with circular dependencies', () => {
+  await t.test('should handle plugins with circular dependencies', async () => {
     const api = new Api({ name: 'test', version: '1.0.0' });
     
     const pluginA = {
@@ -552,18 +552,18 @@ test('Plugin edge cases', async (t) => {
 
     // Both plugins depend on each other - circular dependency
     // PluginA should fail because plugin-b is not installed
-    assert.throws(() => api.use(pluginA), PluginError);
+    await assert.rejects(() => api.use(pluginA), PluginError);
     
     // PluginB should also fail because plugin-a is not installed
-    assert.throws(() => api.use(pluginB), PluginError);
+    await assert.rejects(() => api.use(pluginB), PluginError);
     
     // Neither can be installed due to circular dependency
   });
 
-  await t.test('should handle plugins that modify the API during installation', () => {
+  await t.test('should handle plugins that modify the API during installation', async () => {
     const api = new Api({ name: 'test', version: '1.0.0' });
     
-    api.use({
+    await api.use({
       name: 'modifier',
       install: ({ addApiMethod }) => {
         addApiMethod('test', async () => 'original');
@@ -577,7 +577,7 @@ test('Plugin edge cases', async (t) => {
     assert.ok(api.test);
   });
 
-  await t.test('should handle plugin installation order with complex dependencies', () => {
+  await t.test('should handle plugin installation order with complex dependencies', async () => {
     const api = new Api({ name: 'test', version: '1.0.0' });
     const order = [];
 
@@ -599,24 +599,24 @@ test('Plugin edge cases', async (t) => {
     };
 
     // Must install in dependency order
-    api.use(pluginC);  // No dependencies
-    api.use(pluginB);  // Depends on C
-    api.use(pluginA);  // Depends on B and C
+    await api.use(pluginC);  // No dependencies
+    await api.use(pluginB);  // Depends on C
+    await api.use(pluginA);  // Depends on B and C
 
     assert.deepEqual(order, ['c', 'b', 'a']);
   });
 
-  await t.test('should handle plugins with malformed structure', () => {
+  await t.test('should handle plugins with malformed structure', async () => {
     const api = new Api({ name: 'test', version: '1.0.0' });
     
     // Missing name
-    assert.throws(() => api.use({ install: () => {} }), PluginError);
+    await assert.rejects(() => api.use({ install: () => {} }), PluginError);
     
     // Missing install
-    assert.throws(() => api.use({ name: 'test' }), PluginError);
+    await assert.rejects(() => api.use({ name: 'test' }), PluginError);
     
     // Install not a function
-    assert.throws(() => api.use({ name: 'test', install: 'not a function' }), PluginError);
+    await assert.rejects(() => api.use({ name: 'test', install: 'not a function' }), PluginError);
     
     // Dependencies as non-array causes error because library iterates chars
     const plugin = { 
@@ -626,14 +626,14 @@ test('Plugin edge cases', async (t) => {
     };
     
     // This throws because dependency 'n' is not installed
-    assert.throws(
+    await assert.rejects(
       () => api.use(plugin),
       PluginError,
       /Plugin 'test' requires dependency 'n' which is not installed/
     );
   });
 
-  await t.test('should handle plugin names with special characters', () => {
+  await t.test('should handle plugin names with special characters', async () => {
     const api = new Api({ name: 'test', version: '1.0.0' });
     
     // Should accept various plugin names
@@ -647,7 +647,7 @@ test('Plugin edge cases', async (t) => {
     ];
 
     for (const name of validNames) {
-      api.use({
+      await api.use({
         name,
         install: () => {}
       });
@@ -656,11 +656,11 @@ test('Plugin edge cases', async (t) => {
     assert.equal(api._installedPlugins.size, validNames.length);
   });
 
-  await t.test('should handle plugins that throw during installation', () => {
+  await t.test('should handle plugins that throw during installation', async () => {
     const api = new Api({ name: 'test', version: '1.0.0' });
     
-    assert.throws(() => {
-      api.use({
+    await assert.rejects(async () => {
+      await api.use({
         name: 'bad-plugin',
         install: () => {
           throw new Error('Installation failed');
@@ -672,16 +672,16 @@ test('Plugin edge cases', async (t) => {
     assert.ok(!api._installedPlugins.has('bad-plugin'));
   });
 
-  await t.test('should handle plugin installation context isolation', () => {
+  await t.test('should handle plugin installation context isolation', async () => {
     const api = new Api({ name: 'test', version: '1.0.0' });
     let context1, context2;
 
-    api.use({
+    await api.use({
       name: 'plugin1',
       install: (ctx) => { context1 = ctx; }
     });
 
-    api.use({
+    await api.use({
       name: 'plugin2',
       install: (ctx) => { context2 = ctx; }
     });
@@ -1003,7 +1003,7 @@ test('Error handling edge cases', async (t) => {
     assert.ok(true); // Didn't crash
   });
 
-  await t.test('should provide helpful error for common mistakes', () => {
+  await t.test('should provide helpful error for common mistakes', async () => {
     const api = new Api({ name: 'test', version: '1.0.0' });
     
     // Non-async functions are actually allowed
@@ -1021,7 +1021,7 @@ test('Error handling edge cases', async (t) => {
     };
     
     // Throws PluginError, not ValidationError
-    assert.throws(() => api.use(plugin), PluginError);
+    await assert.rejects(() => api.use(plugin), PluginError);
   });
 });
 
@@ -1117,7 +1117,7 @@ test('Integration edge cases', async (t) => {
     const events = [];
 
     // Plugin 1: Adds base functionality
-    api.use({
+    await api.use({
       name: 'base-plugin',
       install: ({ addApiMethod, addHook, vars }) => {
         vars.events = events;
@@ -1136,7 +1136,7 @@ test('Integration edge cases', async (t) => {
     });
 
     // Plugin 2: Extends functionality
-    api.use({
+    await api.use({
       name: 'extend-plugin',
       dependencies: ['base-plugin'],
       install: ({ addHook }) => {
@@ -1388,8 +1388,8 @@ test('Concurrency edge cases', async (t) => {
     })();
 
     // Install plugin after a delay
-    setTimeout(() => {
-      api.use({
+    setTimeout(async () => {
+      await api.use({
         name: 'delayed-plugin',
         install: ({ addApiMethod }) => {
           addApiMethod('pluginMethod', async () => 'added');

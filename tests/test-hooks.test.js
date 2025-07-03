@@ -124,14 +124,14 @@ test('Hook System', async (t) => {
     const api = new Api({ name: 'test', version: '1.0.0' });
 
     // Install plugins
-    api.use({
+    await api.use({
       name: 'plugin1',
       install: ({ addHook }) => {
         addHook('test', 'func1', {}, () => order.push('p1'));
       }
     });
 
-    api.use({
+    await api.use({
       name: 'plugin2',
       install: ({ addHook }) => {
         addHook('test', 'func2', { beforePlugin: 'plugin1' }, () => order.push('p2-before'));

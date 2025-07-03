@@ -107,7 +107,7 @@ test('Vars and Helpers', async (t) => {
       }
     };
 
-    api.use(plugin);
+    await api.use(plugin);
     const result = await api.usePluginStuff();
     assert.deepEqual(result, { var: 'from-plugin', helper: 'helper-result' });
   });

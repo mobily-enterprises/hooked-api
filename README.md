@@ -26,7 +26,7 @@ import { GeneratedOnPlugin } from './GeneratedOnPlugin.js'
 const api = new DbApi()
 
 // Add MySql connector with a Plugin
-api.use(GeneratedOnPlugin)
+await api.use(GeneratedOnPlugin)
 
 // That's it, "api" is ready to use!
 ```
@@ -505,8 +505,8 @@ const api = new Api({
   version: '1.0.0'
 })
 
-api.use(DatabasePlugin)
-api.use(GeneratedOnPlugin)
+await api.use(DatabasePlugin)
+await api.use(GeneratedOnPlugin)
 
 // api.addScope('books', ...)
 // api.addScope('authors', ...)
@@ -551,10 +551,10 @@ const api = new DbApi({
 })
 
 // NO NEED to do this, since DbApi already comes with it
-// api.use(DatabasePlugin)
+// await api.use(DatabasePlugin)
 
 // You can add "GeneratedOnPlugin" if you like
-api.use(GeneratedOnPlugin)
+await api.use(GeneratedOnPlugin)
 
 // Then add books as you wish
 // api.addScope('books', ...)
@@ -599,7 +599,7 @@ class DbApi extends Api {
 
 // Usage
 const api = new DbApi({ name: 'library-api', version: '1.0.0' });
-api.use(GeneratedOnPlugin);  // User adds this plugin
+await api.use(GeneratedOnPlugin);  // User adds this plugin
 
 // Even though WriteMessagePlugin was installed BEFORE GeneratedOnPlugin,
 // the 'beforePlugin' option ensures it logs the original record
@@ -656,8 +656,8 @@ const SanitizationPlugin = {
 };
 
 // Usage
-api.use(ValidationPlugin);
-api.use(SanitizationPlugin);
+await api.use(ValidationPlugin);
+await api.use(SanitizationPlugin);
 
 // Hook execution order for 'beforeSave':
 // 1. validateRequired (checks if title exists)
@@ -1019,12 +1019,12 @@ The library prevents overwriting critical API properties:
 
 ```javascript
 // Reserved plugin names
-api.use({
+await api.use({
   name: 'api',      // Throws PluginError: 'api' is reserved
   install: () => {}
 });
 
-api.use({
+await api.use({
   name: 'scopes',   // Throws PluginError: 'scopes' is reserved
   install: () => {}
 });

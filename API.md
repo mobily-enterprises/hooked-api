@@ -10,7 +10,7 @@
 
 The API instance exposes these public properties and methods:
 
-- `api.use(plugin, options)` - Install plugins with optional configuration
+- `await api.use(plugin, options)` - Install plugins with optional configuration
 - `api.customize(config)` - Add hooks, methods, vars, and helpers after initialization
 - `api.addScope(name, options, extras)` - Add scopes with configuration and optional customizations
 - `api.setScopeAlias(aliasName, addScopeAlias)` - Create aliases for the scopes property and addScope method
@@ -242,10 +242,10 @@ install: ({
 
 ```javascript
 // Install a plugin
-api.use(myPlugin);
+await api.use(myPlugin);
 
 // Install with options
-api.use(myPlugin, {
+await api.use(myPlugin, {
   apiKey: 'custom-key',
   endpoint: 'https://api.example.com'
 });
@@ -336,7 +336,7 @@ Emitted after a plugin is successfully installed.
 ```javascript
 eventData: {
   pluginName: string,     // Name of the installed plugin
-  pluginOptions: Object,  // Options passed to api.use()
+  pluginOptions: Object,  // Options passed to await api.use()
   plugin: Object          // The plugin object itself
 }
 ```
@@ -460,7 +460,7 @@ test('myPlugin adds expected functionality', async () => {
     }
   };
   
-  api.use(myPlugin);
+  await api.use(myPlugin);
   
   const result = await api.getValue();
   expect(result).toBe('plugin-loaded');
@@ -499,7 +499,7 @@ Properties:
 Thrown when plugin operations fail (installation, dependencies, naming conflicts)
 ```javascript
 try {
-  api.use({ name: 'api' }); // Reserved name
+  await api.use({ name: 'api' }); // Reserved name
 } catch (error) {
   if (error instanceof PluginError) {
     console.log(error.code);             // 'PLUGIN_ERROR'

@@ -18,7 +18,7 @@ permalink: /API.html
 
 The API instance exposes these public properties and methods:
 
-- `api.use(plugin, options)` - Install plugins with optional configuration
+- `await api.use(plugin, options)` - Install plugins with optional configuration
 - `api.customize(config)` - Add hooks, methods, vars, and helpers after initialization
 - `api.addScope(name, options, extras)` - Add scopes with configuration and optional customizations
 - `api.setScopeAlias(aliasName, addScopeAlias)` - Create aliases for the scopes property and addScope method
@@ -344,7 +344,7 @@ Emitted after a plugin is successfully installed.
 ```javascript
 eventData: {
   pluginName: string,     // Name of the installed plugin
-  pluginOptions: Object,  // Options passed to api.use()
+  pluginOptions: Object,  // Options passed to await api.use()
   plugin: Object          // The plugin object itself
 }
 ```

@@ -1059,8 +1059,8 @@ api.addScope('users', {});
 api.addScope('users', {});  // Throws ScopeError
 
 // Duplicate plugin names
-await api.use(MyPlugin);
-await api.use(MyPlugin);  // Throws PluginError
+api.use(MyPlugin);
+api.use(MyPlugin);  // Throws PluginError
 ```
 
 ### Frozen Options
@@ -1380,7 +1380,7 @@ const SafePlugin = {
 };
 
 // Usage - the error doesn't stop scope creation
-await api.use(SafePlugin);
+api.use(SafePlugin);
 api.addScope('special');  // Error is logged, but scope is still created
 api.addScope('normal');   // Processes normally
 ```

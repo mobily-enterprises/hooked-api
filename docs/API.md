@@ -210,7 +210,10 @@ install: ({
   name,               // Plugin name (same as plugin.name)
   apiOptions,         // Frozen API configuration
   pluginOptions,      // Frozen plugin configurations
-  context             // Empty context object for plugin use
+  context,            // Empty context object for plugin use
+  
+  // API instance
+  api                 // The API instance itself (to define more properties)
 }) => {
   // Example usage:
   
@@ -236,6 +239,10 @@ install: ({
   helpers.fetch = async (url) => {
     // Custom fetch implementation
   };
+  
+  // Use the API instance for advanced operations
+  // For example, creating a namespace programmatically:
+  // api.namespace('myNamespace').addApiMethod('customMethod', handler);
 }
 ```
 

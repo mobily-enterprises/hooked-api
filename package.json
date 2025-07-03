@@ -1,6 +1,6 @@
 {
   "name": "hooked-api",
-  "version": "1.0.1",
+  "version": "1.0.4",
   "main": "index.js",
   "type": "module",
   "directories": {
@@ -18,7 +18,9 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
-    "jsonrestapi-schema": "^1.0.1",
+    "semver": "^7.7.2"
+  },
+  "devDependencies": {
     "semver": "^7.7.2"
   }
 }

@@ -2262,7 +2262,10 @@ export class Api {
         name: plugin.name,
         apiOptions: Object.freeze({ ...this._apiOptions }),
         pluginOptions: Object.freeze({ ...this._pluginOptions }),
-        context: {} // Mutable context for plugin's internal use
+        context: {}, // Mutable context for plugin's internal use
+        
+        // Pass the API instance so plugins can create namespaces
+        api: this
       };
       
       /**

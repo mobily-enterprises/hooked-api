@@ -496,10 +496,11 @@ export class Api {
                * This function executes when the user calls api.scopes.users.create()
                * It sets up the execution context and handles the entire method lifecycle
                */
-              return async (params = {}) => {
+              return async (params = {}, initialContext = {}) => {
                 const startTime = Date.now();
-                const methodContext = `${scopeName}.${prop}`;
                 
+                // Disabled due to circular reference issues when params contain non-serializable objects
+                // console.log(`🚀 [HOOKED-API-PROXY] Scope method '${prop}' called on '${scopeName}' with params:`, JSON.stringify(params, null, 2));
                 this._logger.debug(`Scope method '${prop}' called on '${scopeName}'`, { params });
                 
                 /**
@@ -507,7 +508,7 @@ export class Api {
                  * This context is passed through hooks and to the method handler
                  * Allows data sharing between hooks and methods
                  */
-                const context = {};
+                const context = initialContext;
                 
                 /**
                  * Build a scope-aware context that includes:
@@ -616,7 +617,7 @@ export class Api {
            * Return a bound async function that executes the method
            * with full context, logging, and error handling
            */
-          return async (params = {}) => {
+          return async (params = {}, initialContext = {}) => {
             const startTime = Date.now();
             const handler = target._apiMethods.get(prop);
             
@@ -626,7 +627,7 @@ export class Api {
              * Create a fresh context for this API method call
              * Similar to scope methods, this enables hook/method communication
              */
-            const context = {};
+            const context = initialContext;
             
             /**
              * Create a bound logger for this method's context

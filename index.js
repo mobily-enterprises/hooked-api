@@ -1478,13 +1478,14 @@ export class Api {
         });
       } catch (error) {
         const duration = Date.now() - startTime;
-        // Log error but don't propagate - events shouldn't break execution
+        
         this._logger.error(`Event listener '${listenerName}' failed`, { 
           plugin: pluginName, 
           event: eventName, 
           error: error.message, 
           duration: `${duration}ms` 
         });
+        throw error; // Re-throw to allow caller to handle if needed
       }
     }
   }
@@ -1679,6 +1680,11 @@ export class Api {
         }
       )
     }
+    
+    this._emit('method:scope:adding', {
+      methodName: method,
+      handler: handler
+    });
     
     // Scope methods don't need property conflict checking since they're not on the main API
     this._scopeMethods.set(method, handler)

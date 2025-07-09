@@ -512,6 +512,85 @@ await api.use(GeneratedOnPlugin)
 // api.addScope('authors', ...)
 ```
 
+### Creating Hookable Plugin Operations
+
+Plugins can create their own hookable operations using the `runHooks` function. This is useful when your plugin performs complex operations that other plugins might want to extend or intercept.
+
+```javascript
+// HttpServerPlugin.js
+export const HttpServerPlugin = {
+  name: 'HttpServerPlugin',
+  
+  install: ({ api, runHooks, log }) => {
+    // Create HTTP namespace
+    api.http = {
+      async handleRequest(req, res) {
+        // Create context for this operation
+        const context = {
+          req,
+          res,
+          handled: false,
+          auth: { userId: null, claims: null }
+        };
+        
+        // Run hooks - other plugins can intercept or modify the request
+        const shouldContinue = await runHooks('http:request', context, {
+          url: req.url,
+          method: req.method,
+          headers: req.headers
+        });
+        
+        // Check if a hook handled the request
+        if (!shouldContinue || context.handled) {
+          return; // Request was intercepted
+        }
+        
+        // Continue with normal processing
+        log.info(`Processing ${req.method} ${req.url}`);
+        // ... handle the request
+      }
+    };
+  }
+};
+
+// AuthPlugin can hook into HTTP requests
+export const AuthPlugin = {
+  name: 'AuthPlugin',
+  
+  install: ({ addHook }) => {
+    addHook('http:request', 'authenticate', {}, async ({ context, methodParams }) => {
+      const { url, headers } = methodParams;
+      
+      // Intercept auth endpoints
+      if (url.startsWith('/auth/')) {
+        context.res.writeHead(200, { 'Content-Type': 'application/json' });
+        context.res.end(JSON.stringify({ status: 'auth handled' }));
+        context.handled = true;
+        return false; // Stop processing
+      }
+      
+      // Add auth info to context for other requests
+      if (headers.authorization) {
+        context.auth.userId = 'user-123';
+        context.auth.claims = { role: 'admin' };
+      }
+      
+      return true; // Continue processing
+    });
+  }
+};
+
+// Usage
+const api = new Api({ name: 'web-api', version: '1.0.0' });
+await api.use(HttpServerPlugin);
+await api.use(AuthPlugin);
+
+// Now when handleRequest is called, AuthPlugin's hook will run
+await api.http.handleRequest(req, res);
+```
+
+This pattern allows plugins to create extensible operations that other plugins can participate in, similar to how method lifecycle hooks work.
+
 ## Making a pre-hooked Api class
 
 Most of the time (in fact, probably all of the time) you will want to distribute a ready-to-go class with a

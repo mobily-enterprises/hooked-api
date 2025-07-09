@@ -203,6 +203,43 @@ const configPlugin = {
 await api.use(configPlugin, { endpoint: 'https://api.example.com' });
 ```
 
+### Plugin with hookable operations
+```javascript
+const httpPlugin = {
+  name: 'httpPlugin',
+  install: ({ api, runHooks }) => {
+    api.handleRequest = async (req, res) => {
+      const context = { req, res, handled: false };
+      
+      // Run hooks for this operation
+      const shouldContinue = await runHooks('http:request', context, {
+        url: req.url,
+        method: req.method
+      });
+      
+      if (!shouldContinue || context.handled) return;
+      
+      // Process request...
+    };
+  }
+};
+
+// Another plugin can hook into it
+const authPlugin = {
+  name: 'authPlugin',
+  install: ({ addHook }) => {
+    addHook('http:request', 'auth', {}, async ({ context, methodParams }) => {
+      if (methodParams.url === '/login') {
+        context.res.end('Login page');
+        context.handled = true;
+        return false;
+      }
+      return true;
+    });
+  }
+};
+```
+
 ## Variables and Helpers
 
 ### Set global variables

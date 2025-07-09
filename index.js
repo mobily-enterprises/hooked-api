@@ -2246,6 +2246,15 @@ export class Api {
         },
         
         /**
+         * Run hooks from plugin context
+         * Allows plugins to create their own hookable operations
+         */
+        runHooks: (hookName, context = {}, params = {}) => {
+          api._logger.trace(`Plugin '${plugin.name}' running hooks for '${hookName}'`);
+          return api._runHooks(hookName, context, params);
+        },
+        
+        /**
          * Data access - plugins can read/write vars and helpers
          * during installation
          */

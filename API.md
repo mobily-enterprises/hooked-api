@@ -155,6 +155,80 @@ async ({
 - Returning `false` from a hook stops the execution of remaining hooks in the chain
 - Hooks can be global (run for all scopes) or scope-specific
 
+### Plugin-Level Hooks
+
+Plugins can create their own hookable operations using the `runHooks` function provided in the install context. This extends the hook concept beyond method lifecycle to any plugin operation.
+
+#### Naming Convention
+
+- **Method lifecycle hooks**: `beforeSave`, `afterFetch`, `beforeDelete`, etc.
+- **Plugin operation hooks**: Use plugin:operation format like `http:request`, `graphql:query`, `websocket:message`
+
+#### Example: HTTP Plugin with Hookable Request Handling
+
+```javascript
+const HttpPlugin = {
+  name: 'http',
+  install({ runHooks, api, log }) {
+    api.http = {
+      async handleRequest(req, res) {
+        // Create context for the operation
+        const context = { 
+          req, 
+          res, 
+          handled: false,
+          auth: { userId: null, claims: null }
+        };
+        
+        // Run hooks for HTTP request processing
+        const shouldContinue = await runHooks('http:request', context, {
+          url: req.url,
+          method: req.method,
+          headers: req.headers
+        });
+        
+        // Check if a hook handled the request
+        if (!shouldContinue || context.handled) {
+          return; // Request was intercepted
+        }
+        
+        // Continue with normal HTTP processing
+        log.info(`Processing ${req.method} ${req.url}`);
+        // ... rest of implementation
+      }
+    };
+  }
+};
+
+// Another plugin can hook into HTTP requests
+const AuthPlugin = {
+  name: 'auth',
+  install({ addHook }) {
+    addHook('http:request', 'authenticate', {}, async ({ context, methodParams }) => {
+      const { headers } = methodParams;
+      
+      // Handle auth endpoints
+      if (methodParams.url.startsWith('/api/auth/')) {
+        // Process authentication
+        context.res.end(JSON.stringify({ token: 'new-token' }));
+        context.handled = true;
+        return false; // Stop processing
+      }
+      
+      // Extract auth from headers
+      if (headers.authorization) {
+        context.auth.userId = extractUserId(headers.authorization);
+        context.auth.claims = extractClaims(headers.authorization);
+      }
+      
+      return true; // Continue to next hook/handler
+    });
+  }
+};
+```
+
+This pattern allows plugins to create extensible operations that other plugins can participate in, just like methods have lifecycle hooks.
+
 
 ## Plugin System
 
@@ -185,6 +259,8 @@ install: ({
   // Hook management
   addHook,            // Special function that auto-injects plugin name:
                       // addHook(hookName, functionName, hookOptions, handler)
+  runHooks,           // Run hooks from plugin context:
+                      // runHooks(hookName, context, params)
   
   // Event management
   on,                 // Register event listeners:
@@ -224,6 +300,23 @@ install: ({
     context.headers = { ...context.headers, Authorization: vars.apiKey };
   });
   
+  // Create a hookable operation in your plugin
+  api.handleRequest = async (req, res) => {
+    const requestContext = { req, res, handled: false };
+    
+    // Run hooks for this plugin operation
+    const shouldContinue = await runHooks('http:request', requestContext, {
+      url: req.url,
+      method: req.method
+    });
+    
+    if (!shouldContinue || requestContext.handled) {
+      return; // Request was intercepted by a hook
+    }
+    
+    // Continue with normal processing
+  };
+  
   // Set variables
   vars.apiKey = 'default-key';
   
@@ -231,10 +324,6 @@ install: ({
   helpers.fetch = async (url) => {
     // Custom fetch implementation
   };
-  
-  // Use the API instance for advanced operations
-  // For example, creating a namespace programmatically:
-  // api.namespace('myNamespace').addApiMethod('customMethod', handler);
 }
 ```
 

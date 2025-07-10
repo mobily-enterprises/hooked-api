@@ -8,11 +8,11 @@ test.beforeEach(() => {
 });
 
 test('Error Handling', async (t) => {
-  await t.test('should provide detailed validation errors', () => {
+  await t.test('should provide detailed validation errors', async () => {
     const api = new Api({ name: 'test', version: '1.0.0' });
     
     try {
-      api.addScope('invalid-name', {});
+      await api.addScope('invalid-name', {});
     } catch (error) {
       assert.ok(error instanceof ValidationError);
       assert.equal(error.code, 'VALIDATION_ERROR');
@@ -51,22 +51,22 @@ test('Error Handling', async (t) => {
 
   await t.test('should provide detailed scope errors', async () => {
     const api = new Api({ name: 'test', version: '1.0.0' });
-    api.customize({
+    await api.customize({
       scopeMethods: {
         test: async () => 'ok'
       }
     });
     
-    api.addScope('users', {});
+    await api.addScope('users', {});
     
     // This creates a proxy that throws when methods are called
     const nonExistent = api.scopes.nonexistent;
     assert.equal(nonExistent, undefined);
   });
 
-  await t.test('should provide detailed method errors', () => {
+  await t.test('should provide detailed method errors', async () => {
     const api = new Api({ name: 'test', version: '1.0.0' });
-    api.addScope('users', {});
+    await api.addScope('users', {});
     
     try {
       api.scopes.users();
@@ -82,19 +82,19 @@ test('Error Handling', async (t) => {
     const api = new Api({ name: 'test', version: '1.0.0' });
     
     // Various null/undefined checks
-    assert.throws(() => api.addScope(null, {}), ValidationError);
-    assert.throws(() => api.addScope(undefined, {}), ValidationError);
+    await assert.rejects(() => api.addScope(null, {}), ValidationError);
+    await assert.rejects(() => api.addScope(undefined, {}), ValidationError);
     await assert.rejects(() => api.use(null), PluginError);
     await assert.rejects(() => api.use(undefined), PluginError);
   });
 
-  await t.test('should prevent prototype pollution attacks', () => {
+  await t.test('should prevent prototype pollution attacks', async () => {
     const api = new Api({ name: 'test', version: '1.0.0' });
     
     // Try to add dangerous scope names
-    assert.throws(() => api.addScope('__proto__', {}), ValidationError);
-    assert.throws(() => api.addScope('constructor', {}), ValidationError);
-    assert.throws(() => api.addScope('prototype', {}), ValidationError);
+    await assert.rejects(() => api.addScope('__proto__', {}), ValidationError);
+    await assert.rejects(() => api.addScope('constructor', {}), ValidationError);
+    await assert.rejects(() => api.addScope('prototype', {}), ValidationError);
   });
 
   await t.test('should handle symbol properties safely', () => {

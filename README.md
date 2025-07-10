@@ -100,7 +100,9 @@ This guide is focussed on creating exactly the example API shown above.
 
 ## First steps: declare a simple function
 
-Here's the simplest way to create an API with a single method:
+Here's the simplest way to create an API with a single method.
+
+> **Note**: Starting from version 2.0.0, the `customize()`, `addScope()`, and `use()` methods are async and must be awaited. This ensures that event handlers can perform critical setup work before the API is ready to use.
 
 ```javascript
 import { Api } from 'hooked-api';
@@ -284,7 +286,7 @@ Since we defined `scopeMethods` instead of `apiMethods`, those methods will only
 To define a scope:
 
 ```javascript
-api.addScope('books',
+await api.addScope('books',
   {
     schema: {
       title: 'string',
@@ -300,7 +302,7 @@ api.addScope('books',
   }
 )
 
-api.addScope('authors',
+await api.addScope('authors',
   {
     schema: {
       fullName: 'string',
@@ -609,8 +611,14 @@ class DbApi extends Api {
     // This will add the API to the registry
     super(apiOptions);
 
+    // Note: Plugins should be added after construction
+    // since use() is now async
+  }
+  
+  async initialize() {
     // Use the core plugin by default
-    this.use(DatabasePlugin)
+    await this.use(DatabasePlugin);
+    return this;
   }
 }
 
@@ -629,15 +637,15 @@ const api = new DbApi({
   version: '1.0.0'
 })
 
-// NO NEED to do this, since DbApi already comes with it
-// await api.use(DatabasePlugin)
+// Initialize the API with its default plugins
+await api.initialize();
 
 // You can add "GeneratedOnPlugin" if you like
 await api.use(GeneratedOnPlugin)
 
 // Then add books as you wish
-// api.addScope('books', ...)
-// api.addScope('authors', ...)
+// await api.addScope('books', ...)
+// await api.addScope('authors', ...)
 ```
 
 ## Hook Placement Options
@@ -669,15 +677,22 @@ import { Api } from './index.js';
 class DbApi extends Api {
   constructor(apiOptions = {}) {
     super(apiOptions);
-
+    
+    // Note: Plugins should be added after construction
+    // since use() is now async
+  }
+  
+  async initialize() {
     // Use the core plugins
-    this.use(DatabasePlugin);
-    this.use(WriteMessagePlugin);  // WriteMessage added to base API
+    await this.use(DatabasePlugin);
+    await this.use(WriteMessagePlugin);  // WriteMessage added to base API
+    return this;
   }
 }
 
 // Usage
 const api = new DbApi({ name: 'library-api', version: '1.0.0' });
+await api.initialize();  // Initialize with base plugins
 await api.use(GeneratedOnPlugin);  // User adds this plugin
 
 // Even though WriteMessagePlugin was installed BEFORE GeneratedOnPlugin,
@@ -1292,7 +1307,9 @@ When building APIs with hooked-api, follow these security best practices:
 
 ## Event System
 
-In addition to hooks (which intercept and modify behavior of methors), Hooked API provides an event system for lifecycle notifications  to the API itself. Events are simpler than hooks - they notify about system changes but cannot modify behavior or stop execution.
+In addition to hooks (which intercept and modify behavior of methods), Hooked API provides an event system for lifecycle notifications to the API itself. Events are simpler than hooks - they notify about system changes but cannot modify behavior or stop execution.
+
+> **Important**: Events are now properly awaited during API setup. When you call `await api.addScope()`, the method will wait for all `scope:added` event handlers to complete before returning. This ensures that critical setup work (like schema initialization) is completed before the scope is usable.
 
 ### Events vs Hooks
 
@@ -1579,6 +1596,74 @@ beforeEach(() => {
   resetGlobalRegistryForTesting();
 });
 ```
+
+## Migration Guide: Async API Methods
+
+### Breaking Change in v2.0.0
+
+The following methods are now async and must be awaited:
+- `api.customize()`
+- `api.addScope()`
+- `api.use()`
+
+This change ensures that event handlers can complete critical setup work before the API continues.
+
+### Migrating Your Code
+
+**Before (v1.x):**
+```javascript
+const api = new Api({ name: 'my-api', version: '1.0.0' });
+
+api.customize({ 
+  apiMethods: { getData: async () => 'data' }
+});
+
+api.addScope('users', { schema: { name: 'string' } });
+
+api.use(MyPlugin);
+```
+
+**After (v2.x):**
+```javascript
+const api = new Api({ name: 'my-api', version: '1.0.0' });
+
+await api.customize({ 
+  apiMethods: { getData: async () => 'data' }
+});
+
+await api.addScope('users', { schema: { name: 'string' } });
+
+await api.use(MyPlugin);
+```
+
+### Handling Initialization in Classes
+
+Since constructors cannot be async, use an initialization pattern:
+
+```javascript
+class MyApi extends Api {
+  constructor(options) {
+    super(options);
+  }
+  
+  async initialize() {
+    await this.use(CorePlugin);
+    await this.customize({ /* ... */ });
+    return this;
+  }
+}
+
+// Usage
+const api = new MyApi({ name: 'my-api', version: '1.0.0' });
+await api.initialize();
+```
+
+### Why This Change?
+
+This change was necessary because:
+1. Event handlers often perform critical setup work (like schema initialization)
+2. Without awaiting, the API might be used before it's fully configured
+3. This prevents race conditions and ensures predictable behavior
 
 
 

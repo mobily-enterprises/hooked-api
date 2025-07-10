@@ -1582,7 +1582,7 @@ export class Api {
    * 
    * Used for global operations that don't belong to a specific scope
    */
-  _addApiMethod(method, handler) {
+  async _addApiMethod(method, handler) {
     if (!method || typeof method !== 'string') {
       const received = method === undefined ? 'undefined' : 
                       method === null ? 'null' : 
@@ -1655,7 +1655,7 @@ export class Api {
     this._logger.trace(`Added API method '${method}'`);
     
     // Emit event for plugins to react to method creation
-    this._emit('method:api:added', {
+    await this._emit('method:api:added', {
       methodName: method,
       handler: handler
     });
@@ -1680,7 +1680,7 @@ export class Api {
    * The handler receives scopeName in its context to know which
    * scope it's operating on
    */
-  _addScopeMethod(method, handler) {
+  async _addScopeMethod(method, handler) {
     if (!method || typeof method !== 'string') {
       const received = method === undefined ? 'undefined' : 
                       method === null ? 'null' : 
@@ -1730,7 +1730,7 @@ export class Api {
       )
     }
     
-    this._emit('method:scope:adding', {
+    await this._emit('method:scope:adding', {
       methodName: method,
       handler: handler
     });
@@ -1740,7 +1740,7 @@ export class Api {
     this._logger.trace(`Added scope method '${method}'`);
     
     // Emit event for plugins to react to scope method creation
-    this._emit('method:scope:added', {
+    await this._emit('method:scope:added', {
       methodName: method,
       handler: handler
     });
@@ -1770,7 +1770,7 @@ export class Api {
    *   helpers: { validate: (data) => {...} }
    * })
    */
-  customize({ hooks = {}, apiMethods = {}, scopeMethods = {}, vars = {}, helpers = {} } = {}) {
+  async customize({ hooks = {}, apiMethods = {}, scopeMethods = {}, vars = {}, helpers = {} } = {}) {
     /**
      * Process hook definitions
      * Hooks can be functions or objects with handler and placement options
@@ -1843,14 +1843,14 @@ export class Api {
      * Process API methods - become available on the API instance
      */
     for (const [methodName, handler] of Object.entries(apiMethods)) {
-      this._addApiMethod(methodName, handler);
+      await this._addApiMethod(methodName, handler);
     }
 
     /**
      * Process scope methods - become available on all scopes
      */
     for (const [methodName, handler] of Object.entries(scopeMethods)) {
-      this._addScopeMethod(methodName, handler);
+      await this._addScopeMethod(methodName, handler);
     }
 
     return this;
@@ -1873,7 +1873,7 @@ export class Api {
    * - Scope methods have access to both global and scope-specific data
    * - Scopes can have custom logging levels and configuration
    */
-  _addScope(name, options = {}, extras = {}) {
+  async _addScope(name, options = {}, extras = {}) {
     if (!name || typeof name !== 'string') {
       const received = name === undefined ? 'undefined' : 
                       name === null ? 'null' : 
@@ -2066,7 +2066,8 @@ export class Api {
     const scopeContext = this._buildScopeContext(name);
     
     // Emit event for plugins to react to scope creation
-    this._emit('scope:added', {
+    // IMPORTANT: Wait for event handlers to complete before returning
+    await this._emit('scope:added', {
       scopeName: name,
       scopeOptions: options,
       scopeExtras: extras,
@@ -2316,19 +2317,19 @@ export class Api {
          * Setup methods - wrapped versions that log plugin attribution
          * This helps track which plugin added what functionality
          */
-        addApiMethod: (method, handler) => {
+        addApiMethod: async (method, handler) => {
           if (api._logger) {
             api._logger.trace(`Plugin '${plugin.name}' adding API method '${method}'`);
           }
-          return api._addApiMethod.call(api, method, handler);
+          return await api._addApiMethod.call(api, method, handler);
         },
-        addScopeMethod: (method, handler) => {
+        addScopeMethod: async (method, handler) => {
           api._logger.trace(`Plugin '${plugin.name}' adding scope method '${method}'`);
-          return api._addScopeMethod(method, handler);
+          return await api._addScopeMethod(method, handler);
         },
-        addScope: (name, options, extras) => {
+        addScope: async (name, options, extras) => {
           api._logger.trace(`Plugin '${plugin.name}' adding scope '${name}'`);
-          return api._addScope(name, options, extras);
+          return await api._addScope(name, options, extras);
         },
         setScopeAlias: (aliasName, addScopeAlias) => {
           api._logger.trace(`Plugin '${plugin.name}' setting scope alias '${aliasName}'`);
@@ -2399,7 +2400,7 @@ export class Api {
       this._logger.info(`Plugin '${plugin.name}' installed successfully`, { duration: `${duration}ms` });
       
       // Emit event for other plugins to react to this plugin installation
-      this._emit('plugin:installed', {
+      await this._emit('plugin:installed', {
         pluginName: plugin.name,
         pluginOptions: options,
         plugin: plugin

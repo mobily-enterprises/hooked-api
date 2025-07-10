@@ -11,7 +11,7 @@ test('Hook System', async (t) => {
   await t.test('should run hooks in order', async () => {
     const order = [];
     const api = new Api({ name: 'test', version: '1.0.0' });
-    api.customize({
+    await api.customize({
       apiMethods: {
         test: async ({ runHooks }) => {
           await runHooks('testHook');
@@ -20,13 +20,13 @@ test('Hook System', async (t) => {
       }
     });
 
-    api.customize({
+    await api.customize({
       hooks: {
         testHook: () => order.push(1)
       }
     });
 
-    api.customize({
+    await api.customize({
       hooks: {
         testHook: () => order.push(2)
       }
@@ -39,7 +39,7 @@ test('Hook System', async (t) => {
   await t.test('should stop hook chain when returning false', async () => {
     const order = [];
     const api = new Api({ name: 'test', version: '1.0.0' });
-    api.customize({
+    await api.customize({
       apiMethods: {
         test: async ({ runHooks }) => {
           await runHooks('testHook');
@@ -49,19 +49,19 @@ test('Hook System', async (t) => {
     });
 
     // Add hooks one at a time
-    api.customize({
+    await api.customize({
       hooks: {
         testHook: () => order.push(1)
       }
     });
     
-    api.customize({
+    await api.customize({
       hooks: {
         testHook: () => { order.push(2); return false; }
       }
     });
     
-    api.customize({
+    await api.customize({
       hooks: {
         testHook: () => order.push(3)
       }
@@ -74,7 +74,7 @@ test('Hook System', async (t) => {
   await t.test('should return false from runHooks when chain is stopped', async () => {
     const api = new Api({ name: 'test', version: '1.0.0' });
     let hookResult;
-    api.customize({
+    await api.customize({
       apiMethods: {
         test: async ({ runHooks }) => {
           hookResult = await runHooks('testHook');
@@ -83,7 +83,7 @@ test('Hook System', async (t) => {
       }
     });
 
-    api.customize({
+    await api.customize({
       hooks: {
         testHook: () => false
       }
@@ -96,7 +96,7 @@ test('Hook System', async (t) => {
   await t.test('should provide correct parameters to hooks', async () => {
     let hookParams;
     const api = new Api({ name: 'test', version: '1.0.0' });
-    api.customize({
+    await api.customize({
       apiMethods: {
         test: async ({ params, context, runHooks }) => {
           context.value = 'test';
@@ -139,7 +139,7 @@ test('Hook System', async (t) => {
       }
     });
 
-    api.customize({
+    await api.customize({
       apiMethods: {
         runTest: async ({ runHooks }) => {
           await runHooks('test');
@@ -155,7 +155,7 @@ test('Hook System', async (t) => {
   await t.test('should handle scope-specific hooks', async () => {
     const calls = [];
     const api = new Api({ name: 'test', version: '1.0.0' });
-    api.customize({
+    await api.customize({
       scopeMethods: {
         test: async ({ scopeName, runHooks }) => {
           await runHooks('scopeHook');
@@ -167,13 +167,13 @@ test('Hook System', async (t) => {
       }
     });
 
-    api.addScope('users', {}, {
+    await api.addScope('users', {}, {
       hooks: {
         scopeHook: ({ scopeName }) => calls.push(`users-${scopeName}`)
       }
     });
 
-    api.addScope('posts', {});
+    await api.addScope('posts', {});
 
     // Call on users scope - should run both global and users-specific
     await api.scopes.users.test();
@@ -185,12 +185,12 @@ test('Hook System', async (t) => {
     assert.deepEqual(calls, ['global-posts']);
   });
 
-  await t.test('should validate hook configuration', () => {
+  await t.test('should validate hook configuration', async () => {
     const api = new Api({ name: 'test', version: '1.0.0' });
     
     // Invalid handler type
-    assert.throws(
-      () => api.customize({
+    await assert.rejects(
+      async () => await api.customize({
         hooks: {
           test: 'not a function'
         }
@@ -199,8 +199,8 @@ test('Hook System', async (t) => {
     );
 
     // Missing handler in object form
-    assert.throws(
-      () => api.customize({
+    await assert.rejects(
+      async () => await api.customize({
         hooks: {
           test: { functionName: 'test' }
         }
@@ -211,7 +211,7 @@ test('Hook System', async (t) => {
 
   await t.test('should handle hook errors properly', async () => {
     const api = new Api({ name: 'test', version: '1.0.0' });
-    api.customize({
+    await api.customize({
       apiMethods: {
         test: async ({ runHooks }) => {
           await runHooks('errorHook');
@@ -232,7 +232,7 @@ test('Hook System', async (t) => {
 
   await t.test('should handle empty hook chains', async () => {
     const api = new Api({ name: 'test', version: '1.0.0' });
-    api.customize({
+    await api.customize({
       apiMethods: {
         test: async ({ context, runHooks }) => {
           await runHooks('nonExistentHook');
@@ -249,7 +249,7 @@ test('Hook System', async (t) => {
     const calls = [];
     const api = new Api({ name: 'test', version: '1.0.0' });
     
-    api.customize({
+    await api.customize({
       scopeMethods: {
         test: async ({ runHooks }) => {
           const result = await runHooks('scopeHook');
@@ -259,7 +259,7 @@ test('Hook System', async (t) => {
       }
     });
 
-    api.addScope('users', {}, {
+    await api.addScope('users', {}, {
       hooks: {
         scopeHook: () => {
           calls.push('hook1');
@@ -277,7 +277,7 @@ test('Hook System', async (t) => {
     const calls = [];
     const api = new Api({ name: 'test', version: '1.0.0' });
     
-    api.customize({
+    await api.customize({
       apiMethods: {
         test: async ({ runHooks }) => {
           await runHooks('multiHook');
@@ -287,19 +287,19 @@ test('Hook System', async (t) => {
     });
 
     // Add hooks one by one
-    api.customize({
+    await api.customize({
       hooks: {
         multiHook: () => calls.push(1)
       }
     });
     
-    api.customize({
+    await api.customize({
       hooks: {
         multiHook: () => calls.push(2)
       }
     });
     
-    api.customize({
+    await api.customize({
       hooks: {
         multiHook: () => calls.push(3)
       }
@@ -313,7 +313,7 @@ test('Hook System', async (t) => {
     const calls = [];
     const api = new Api({ name: 'test', version: '1.0.0' });
     
-    api.customize({
+    await api.customize({
       apiMethods: {
         test: async ({ runHooks }) => {
           const result = await runHooks('multiHook');
@@ -323,19 +323,19 @@ test('Hook System', async (t) => {
     });
 
     // Add hooks one by one
-    api.customize({
+    await api.customize({
       hooks: {
         multiHook: () => calls.push(1)
       }
     });
     
-    api.customize({
+    await api.customize({
       hooks: {
         multiHook: () => { calls.push(2); return false; }
       }
     });
     
-    api.customize({
+    await api.customize({
       hooks: {
         multiHook: () => calls.push(3)
       }
@@ -350,7 +350,7 @@ test('Hook System', async (t) => {
     const calls = [];
     const api = new Api({ name: 'test', version: '1.0.0' });
     
-    api.customize({
+    await api.customize({
       apiMethods: {
         test: async ({ runHooks }) => {
           const result = await runHooks('asyncHook');
@@ -360,7 +360,7 @@ test('Hook System', async (t) => {
     });
 
     // Add async hooks one by one
-    api.customize({
+    await api.customize({
       hooks: {
         asyncHook: async () => { 
           await new Promise(resolve => setTimeout(resolve, 10));
@@ -369,7 +369,7 @@ test('Hook System', async (t) => {
       }
     });
     
-    api.customize({
+    await api.customize({
       hooks: {
         asyncHook: async () => { 
           await new Promise(resolve => setTimeout(resolve, 10));
@@ -379,7 +379,7 @@ test('Hook System', async (t) => {
       }
     });
     
-    api.customize({
+    await api.customize({
       hooks: {
         asyncHook: async () => { 
           await new Promise(resolve => setTimeout(resolve, 10));

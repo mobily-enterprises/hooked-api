@@ -42,7 +42,7 @@ const api = new Api({
 
 ### Add a simple API method
 ```javascript
-api.customize({
+await api.customize({
   apiMethods: {
     greet: async ({ params }) => `Hello ${params.name}!`
   }
@@ -54,7 +54,7 @@ await api.greet({ name: 'World' }); // "Hello World!"
 
 ### Add method with hooks
 ```javascript
-api.customize({
+await api.customize({
   apiMethods: {
     getData: async ({ params, context, runHooks }) => {
       await runHooks('beforeFetch');
@@ -70,14 +70,14 @@ api.customize({
 
 ### Add a basic scope
 ```javascript
-api.addScope('users', {
+await api.addScope('users', {
   schema: { name: 'string', email: 'string' }
 });
 ```
 
 ### Add scope with methods
 ```javascript
-api.customize({
+await api.customize({
   scopeMethods: {
     get: async ({ params, scopeName }) => {
       return await db.fetch(scopeName, params.id);
@@ -85,13 +85,13 @@ api.customize({
   }
 });
 
-api.addScope('users', {});
+await api.addScope('users', {});
 // Usage: await api.scopes.users.get({ id: 123 });
 ```
 
 ### Add scope with custom hooks
 ```javascript
-api.addScope('products', 
+await api.addScope('products', 
   { schema: { name: 'string', price: 'number' } },
   {
     hooks: {
@@ -108,7 +108,7 @@ api.addScope('products',
 // For database-like APIs
 api.setScopeAlias('tables', 'addTable');
 
-api.addTable('orders', { schema: { total: 'number' } });
+await api.addTable('orders', { schema: { total: 'number' } });
 // Usage: await api.tables.orders.get({ id: 1 });
 ```
 
@@ -116,7 +116,7 @@ api.addTable('orders', { schema: { total: 'number' } });
 
 ### Add a simple hook
 ```javascript
-api.customize({
+await api.customize({
   hooks: {
     beforeSave: ({ context }) => {
       context.timestamp = new Date();
@@ -127,7 +127,7 @@ api.customize({
 
 ### Add hook with placement
 ```javascript
-api.customize({
+await api.customize({
   hooks: {
     'afterFetch': ({ context, log }) => {
       log.debug('Original data:', context.record);
@@ -136,7 +136,7 @@ api.customize({
 });
 
 // Later, add a hook that runs before the above
-api.customize({
+await api.customize({
   hooks: {
     afterFetch: [{
       placement: { beforeFunction: 'afterFetch' },
@@ -150,7 +150,7 @@ api.customize({
 
 ### Stop hook chain execution
 ```javascript
-api.customize({
+await api.customize({
   hooks: {
     validate: ({ context }) => {
       if (!context.record.isValid) {
@@ -244,7 +244,7 @@ const authPlugin = {
 
 ### Set global variables
 ```javascript
-api.customize({
+await api.customize({
   vars: {
     apiKey: 'secret-key',
     timeout: 5000
@@ -254,7 +254,7 @@ api.customize({
 
 ### Add helper functions
 ```javascript
-api.customize({
+await api.customize({
   helpers: {
     formatDate: (date) => date.toISOString(),
     delay: (ms) => new Promise(r => setTimeout(r, ms))
@@ -264,7 +264,7 @@ api.customize({
 
 ### Use vars and helpers in methods
 ```javascript
-api.customize({
+await api.customize({
   apiMethods: {
     fetchData: async ({ vars, helpers }) => {
       await helpers.delay(100);
@@ -279,9 +279,9 @@ api.customize({
 
 ### Scope-specific vars override globals
 ```javascript
-api.customize({ vars: { timeout: 5000 } });
+await api.customize({ vars: { timeout: 5000 } });
 
-api.addScope('slowEndpoint', 
+await api.addScope('slowEndpoint', 
   {},
   { vars: { timeout: 30000 } } // Override for this scope
 );
@@ -291,7 +291,7 @@ api.addScope('slowEndpoint',
 
 ### Use logger in methods
 ```javascript
-api.customize({
+await api.customize({
   apiMethods: {
     process: async ({ params, log }) => {
       log.trace('Starting process');
@@ -332,7 +332,7 @@ const api = new Api({
 import { ValidationError, ScopeError } from 'hooked-api';
 
 try {
-  api.addScope('123-invalid', {});
+  await api.addScope('123-invalid', {});
 } catch (error) {
   if (error instanceof ValidationError) {
     console.log('Invalid name:', error.value);
@@ -383,7 +383,7 @@ test('plugin adds method', async () => {
 
 ### Authentication pattern
 ```javascript
-api.customize({
+await api.customize({
   vars: { currentUser: null },
   helpers: {
     requireAuth: (user) => {
@@ -401,7 +401,7 @@ api.customize({
 
 ### Rate limiting pattern
 ```javascript
-api.customize({
+await api.customize({
   vars: { requests: new Map() },
   helpers: {
     checkRate: (key, limit = 10) => {

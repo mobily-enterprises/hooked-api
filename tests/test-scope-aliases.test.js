@@ -10,14 +10,14 @@ test.beforeEach(() => {
 test('Scope Aliases', async (t) => {
   await t.test('should create scope alias', async () => {
     const api = new Api({ name: 'test', version: '1.0.0' });
-    api.customize({
+    await api.customize({
       scopeMethods: {
         get: async () => 'data'
       }
     });
     
     api.setScopeAlias('resources');
-    api.addScope('users', {});
+    await api.addScope('users', {});
     
     // Both should work
     assert.equal(await api.scopes.users.get(), 'data');
@@ -27,14 +27,14 @@ test('Scope Aliases', async (t) => {
     assert.equal(api.scopes, api.resources);
   });
 
-  await t.test('should create addScope alias', () => {
+  await t.test('should create addScope alias', async () => {
     const api = new Api({ name: 'test', version: '1.0.0' });
     
     api.setScopeAlias('resources', 'addResource');
     
     // Both should work
-    api.addScope('users', {});
-    api.addResource('posts', {});
+    await api.addScope('users', {});
+    await api.addResource('posts', {});
     
     assert.ok(api.scopes.users);
     assert.ok(api.scopes.posts);
@@ -68,7 +68,7 @@ test('Scope Aliases', async (t) => {
   await t.test('should make alias available in handler context', async () => {
     let capturedAlias;
     const api = new Api({ name: 'test', version: '1.0.0' });
-    api.customize({
+    await api.customize({
       apiMethods: {
         checkAlias: async (context) => {
           capturedAlias = context.tables;
@@ -78,7 +78,7 @@ test('Scope Aliases', async (t) => {
     });
     
     api.setScopeAlias('tables');
-    api.addScope('users', {});
+    await api.addScope('users', {});
     
     const result = await api.checkAlias();
     assert.ok(result);

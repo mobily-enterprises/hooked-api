@@ -118,7 +118,7 @@ test('Logging System', async (t) => {
       version: '1.0.0',
       logging: { level: 'warn', logger: customLogger }
     });
-    api.customize({
+    await api.customize({
       scopeMethods: {
         testLogging: async ({ log }) => {
           log.debug('debug from scope');
@@ -128,8 +128,8 @@ test('Logging System', async (t) => {
     });
 
     // Add scope with debug level
-    api.addScope('verbose', { logging: { level: 'debug' } });
-    api.addScope('normal', {});
+    await api.addScope('verbose', { logging: { level: 'debug' } });
+    await api.addScope('normal', {});
 
     // Test verbose scope - should see debug
     await api.scopes.verbose.testLogging();

@@ -103,16 +103,16 @@ test('Prototype pollution prevention', async (t) => {
     }
   });
 
-  await t.test('should prevent pollution via scope names', () => {
+  await t.test('should prevent pollution via scope names', async () => {
     const api = new Api({ name: 'security', version: '1.0.0' });
     
     // These should be rejected
-    assert.throws(() => api.addScope('__proto__', {}), ValidationError);
-    assert.throws(() => api.addScope('constructor', {}), ValidationError);
-    assert.throws(() => api.addScope('prototype', {}), ValidationError);
+    await assert.rejects(() => api.addScope('__proto__', {}), ValidationError);
+    await assert.rejects(() => api.addScope('constructor', {}), ValidationError);
+    await assert.rejects(() => api.addScope('prototype', {}), ValidationError);
   });
 
-  await t.test('should prevent pollution via method names', () => {
+  await t.test('should prevent pollution via method names', async () => {
     const api = new Api({ name: 'security', version: '1.0.0' });
     
     // TODO: Library doesn't validate dangerous method names yet
@@ -140,7 +140,7 @@ test('Prototype pollution prevention', async (t) => {
 
 // Test 2: Input validation and sanitization
 test('Input validation and sanitization', async (t) => {
-  await t.test('should validate method names against injection', () => {
+  await t.test('should validate method names against injection', async () => {
     const api = new Api({ name: 'validation', version: '1.0.0' });
     
     const dangerousNames = [
@@ -169,8 +169,8 @@ test('Input validation and sanitization', async (t) => {
     ];
 
     for (const name of dangerousNames) {
-      assert.throws(() => {
-        api.customize({
+      await assert.rejects(() => {
+        return api.customize({
           apiMethods: {
             [name]: async () => 'test'
           }
@@ -179,7 +179,7 @@ test('Input validation and sanitization', async (t) => {
     }
   });
 
-  await t.test('should validate scope names against injection', () => {
+  await t.test('should validate scope names against injection', async () => {
     const api = new Api({ name: 'validation', version: '1.0.0' });
     
     const dangerousNames = [
@@ -195,17 +195,17 @@ test('Input validation and sanitization', async (t) => {
     ];
 
     for (const name of dangerousNames) {
-      assert.throws(() => {
-        api.addScope(name, {});
+      await assert.rejects(() => {
+        return api.addScope(name, {});
       }, ValidationError, `Should reject: ${JSON.stringify(name)}`);
     }
   });
 
-  await t.test('should handle malicious hook names safely', () => {
+  await t.test('should handle malicious hook names safely', async () => {
     const api = new Api({ name: 'hook-validation', version: '1.0.0' });
     
     // Hook names are less restricted but should still be safe
-    api.customize({
+    await api.customize({
       hooks: {
         'valid-hook-name': () => {},  // Use function syntax, not array
         'valid.hook.name': () => {},
@@ -214,8 +214,8 @@ test('Input validation and sanitization', async (t) => {
     });
 
     // But handler must be a function
-    assert.throws(() => {
-      api.customize({
+    await assert.rejects(() => {
+      return api.customize({
         hooks: {
           test: 'eval(malicious)'  // String instead of function
         }
@@ -258,14 +258,14 @@ test('Access control and isolation', async (t) => {
     const api1 = new Api({ name: 'isolated1', version: '1.0.0' });
     const api2 = new Api({ name: 'isolated2', version: '1.0.0' });
 
-    api1.customize({
+    await api1.customize({
       vars: { secret: 'api1-secret' },
       scopeMethods: {
         getSecret: async ({ vars }) => vars.secret
       }
     });
 
-    api2.customize({
+    await api2.customize({
       vars: { secret: 'api2-secret' },
       scopeMethods: {
         getSecret: async ({ vars }) => vars.secret,
@@ -280,8 +280,8 @@ test('Access control and isolation', async (t) => {
       }
     });
 
-    api1.addScope('test', { vars: { scopeSecret: 'scope1-secret' } });
-    api2.addScope('test', { vars: { scopeSecret: 'scope2-secret' } });
+    await api1.addScope('test', { vars: { scopeSecret: 'scope1-secret' } });
+    await api2.addScope('test', { vars: { scopeSecret: 'scope2-secret' } });
 
     const secret1 = await api1.scopes.test.getSecret();
     const secret2 = await api2.scopes.test.getSecret();
@@ -293,7 +293,7 @@ test('Access control and isolation', async (t) => {
   await t.test('should prevent modification of frozen options', async () => {
     const api = new Api({ name: 'frozen', version: '1.0.0' });
     
-    api.customize({
+    await api.customize({
       apiMethods: {
         tryToModify: async ({ apiOptions, pluginOptions }) => {
           const results = {};
@@ -753,7 +753,7 @@ test('Authorization and access patterns', async (t) => {
   await t.test('should support method-level access control', async () => {
     const api = new Api({ name: 'auth', version: '1.0.0' });
     
-    api.customize({
+    await api.customize({
       vars: {
         currentUser: null
       },
@@ -813,7 +813,7 @@ test('Authorization and access patterns', async (t) => {
   await t.test('should support scope-level access control', async () => {
     const api = new Api({ name: 'scope-auth', version: '1.0.0' });
     
-    api.customize({
+    await api.customize({
       vars: {
         permissions: new Map()
       },
@@ -833,9 +833,9 @@ test('Authorization and access patterns', async (t) => {
       }
     });
 
-    api.addScope('public', {});
-    api.addScope('private', {});
-    api.addScope('admin', {});
+    await api.addScope('public', {});
+    await api.addScope('private', {});
+    await api.addScope('admin', {});
 
     // Set permissions
     api._vars.get('permissions').set('scopes', ['public', 'private']);

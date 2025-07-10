@@ -130,12 +130,14 @@ test('Complex logging configurations', async (t) => {
     const circularObj = { name: 'test' };
     circularObj.self = circularObj;
 
-    // Currently the library doesn't handle circular references in JSON format
-    // This is a library limitation
-    assert.throws(
-      () => api._logger.info('Circular test', circularObj),
-      /Converting circular structure to JSON/
-    );
+    // The library now handles circular references by sanitizing them
+    api._logger.info('Circular test', circularObj);
+    
+    // Check that the log was created successfully with circular reference replaced
+    assert.equal(logs.length, 1);
+    const logData = JSON.parse(logs[0]);
+    assert.equal(logData.data.name, 'test');
+    assert.equal(logData.data.self, '[Circular]');
   });
 
   await t.test('should handle undefined and null in log messages', () => {
@@ -240,16 +242,16 @@ test('Method and scope edge cases', async (t) => {
     const api = new Api({ name: 'test', version: '1.0.0' });
     
     // These should fail because they conflict with Object prototype
-    assert.throws(() => {
-      api.customize({
+    await assert.rejects(async () => {
+      await api.customize({
         apiMethods: {
           toString: async () => 'custom toString'
         }
       });
     }, MethodError);
 
-    assert.throws(() => {
-      api.customize({
+    await assert.rejects(async () => {
+      await api.customize({
         apiMethods: {
           valueOf: async () => 42
         }
@@ -259,7 +261,7 @@ test('Method and scope edge cases', async (t) => {
 
   await t.test('should handle deeply nested params', async () => {
     const api = new Api({ name: 'test', version: '1.0.0' });
-    api.customize({
+    await api.customize({
       apiMethods: {
         deep: async ({ params }) => {
           return params.a.b.c.d.e.f.g;
@@ -273,15 +275,15 @@ test('Method and scope edge cases', async (t) => {
     assert.equal(result, 'found it!');
   });
 
-  await t.test('should handle method names with special regex characters', () => {
+  await t.test('should handle method names with special regex characters', async () => {
     const api = new Api({ name: 'test', version: '1.0.0' });
     
     // These contain special regex characters that should be rejected
     const invalidNames = ['test.method', 'test*method', 'test+method', 'test?method', 'test[method]'];
     
     for (const name of invalidNames) {
-      assert.throws(() => {
-        api.customize({
+      await assert.rejects(async () => {
+        await api.customize({
           apiMethods: {
             [name]: async () => 'test'
           }
@@ -292,7 +294,7 @@ test('Method and scope edge cases', async (t) => {
 
   await t.test('should handle scope methods that throw different error types', async () => {
     const api = new Api({ name: 'test', version: '1.0.0' });
-    api.addScope('errors', {}, {
+    await api.addScope('errors', {}, {
       scopeMethods: {
         throwString: async () => { throw 'string error'; },
         throwNumber: async () => { throw 42; },
@@ -330,11 +332,11 @@ test('Method and scope edge cases', async (t) => {
     assert.ok(Number.isNaN(await api.returnNaN()));
   });
 
-  await t.test('should reject scope names that look like array indices', () => {
+  await t.test('should reject scope names that look like array indices', async () => {
     const api = new Api({ name: 'test', version: '1.0.0' });
     
     // Numeric strings are not valid JavaScript identifiers
-    assert.throws(
+    await assert.rejects(
       () => api.addScope('123', {}),
       ValidationError
     );
@@ -344,7 +346,7 @@ test('Method and scope edge cases', async (t) => {
     const api = new Api({ name: 'test', version: '1.0.0' });
     let chainCount = 0;
 
-    api.customize({
+    await api.customize({
       apiMethods: {
         chain: async ({ context }) => {
           chainCount++;
@@ -368,7 +370,7 @@ test('Hook system edge cases', async (t) => {
     
     // When using customize, you can only define one hook handler per hook name
     // The library design expects plugins to add multiple hooks
-    api.customize({
+    await api.customize({
       apiMethods: {
         test: async ({ context, runHooks }) => {
           await runHooks('test');
@@ -393,7 +395,7 @@ test('Hook system edge cases', async (t) => {
     const api = new Api({ name: 'test', version: '1.0.0' });
     const order = [];
 
-    api.customize({
+    await api.customize({
       apiMethods: {
         test: async ({ runHooks }) => {
           await runHooks('test');
@@ -485,19 +487,19 @@ test('Hook system edge cases', async (t) => {
     assert.deepEqual(result, ['first', 'method']);
   });
 
-  await t.test('should handle hooks with undefined/null handlers gracefully', () => {
+  await t.test('should handle hooks with undefined/null handlers gracefully', async () => {
     const api = new Api({ name: 'test', version: '1.0.0' });
     
-    assert.throws(() => {
-      api.customize({
+    await assert.rejects(() => {
+      return api.customize({
         hooks: {
           test: undefined
         }
       });
     }, ValidationError);
 
-    assert.throws(() => {
-      api.customize({
+    await assert.rejects(() => {
+      return api.customize({
         hooks: {
           test: null
         }
@@ -510,7 +512,7 @@ test('Hook system edge cases', async (t) => {
     let callDepth = 0;
     const maxDepth = 100; // Reduced to avoid stack overflow
 
-    api.customize({
+    await api.customize({
       apiMethods: {
         recurse: async ({ params }) => {
           callDepth++;
@@ -1027,7 +1029,7 @@ test('Error handling edge cases', async (t) => {
 
 // Test 9: Memory and performance edge cases
 test('Memory and performance edge cases', async (t) => {
-  await t.test('should handle large number of methods efficiently', () => {
+  await t.test('should handle large number of methods efficiently', async () => {
     const api = new Api({ name: 'test', version: '1.0.0' });
     const methods = {};
 
@@ -1037,7 +1039,7 @@ test('Memory and performance edge cases', async (t) => {
     }
 
     const start = Date.now();
-    api.customize({ apiMethods: methods });
+    await api.customize({ apiMethods: methods });
     const duration = Date.now() - start;
 
     // Should complete quickly (less than 100ms)

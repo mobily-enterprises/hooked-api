@@ -43,10 +43,10 @@ test('API Methods', async (t) => {
     }
   });
 
-  await t.test('should throw error for invalid method name', () => {
+  await t.test('should throw error for invalid method name', async () => {
     const api = new Api({ name: 'test', version: '1.0.0' });
-    assert.throws(
-      () => api.customize({
+    await assert.rejects(
+      async () => await api.customize({
         apiMethods: {
           'invalid-name': async () => {}
         }
@@ -55,10 +55,10 @@ test('API Methods', async (t) => {
     );
   });
 
-  await t.test('should handle null as method name becoming "null" string', () => {
+  await t.test('should handle null as method name becoming "null" string', async () => {
     const api = new Api({ name: 'test', version: '1.0.0' });
     // When using [null] as a key, it becomes the string "null"
-    api.customize({
+    await api.customize({
       apiMethods: {
         [null]: async () => 'null-method-result'
       }
@@ -67,10 +67,10 @@ test('API Methods', async (t) => {
     assert.equal(typeof api.null, 'function');
   });
 
-  await t.test('should throw error for non-function handler', () => {
+  await t.test('should throw error for non-function handler', async () => {
     const api = new Api({ name: 'test', version: '1.0.0' });
-    assert.throws(
-      () => api.customize({
+    await assert.rejects(
+      async () => await api.customize({
         apiMethods: {
           test: 'not a function'
         }
@@ -79,10 +79,10 @@ test('API Methods', async (t) => {
     );
   });
 
-  await t.test('should throw error when method conflicts with existing property', () => {
+  await t.test('should throw error when method conflicts with existing property', async () => {
     const api = new Api({ name: 'test', version: '1.0.0' });
-    assert.throws(
-      () => api.customize({
+    await assert.rejects(
+      async () => await api.customize({
         apiMethods: {
           use: async () => {} // 'use' already exists
         }
@@ -93,7 +93,7 @@ test('API Methods', async (t) => {
 
   await t.test('should handle method errors properly', async () => {
     const api = new Api({ name: 'test', version: '1.0.0' });
-    api.customize({
+    await api.customize({
       apiMethods: {
         errorMethod: async () => {
           throw new Error('Test error');
@@ -109,7 +109,7 @@ test('API Methods', async (t) => {
 
   await t.test('should maintain context between hooks and methods', async () => {
     const api = new Api({ name: 'test', version: '1.0.0' });
-    api.customize({
+    await api.customize({
       apiMethods: {
         testMethod: async ({ context, runHooks }) => {
           context.value = 1;

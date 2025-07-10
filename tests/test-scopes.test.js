@@ -10,7 +10,7 @@ test.beforeEach(() => {
 test('Scope Methods', async (t) => {
   await t.test('should add and call scope methods', async () => {
     const api = new Api({ name: 'test', version: '1.0.0' });
-    api.customize({
+    await api.customize({
       scopeMethods: {
         list: async ({ scopeName }) => {
           return { scope: scopeName, items: [] };
@@ -18,7 +18,7 @@ test('Scope Methods', async (t) => {
       }
     });
 
-    api.addScope('users', {});
+    await api.addScope('users', {});
     const result = await api.scopes.users.list();
     assert.deepEqual(result, { scope: 'users', items: [] });
   });
@@ -26,7 +26,7 @@ test('Scope Methods', async (t) => {
   await t.test('should provide all handler parameters to scope methods', async () => {
     let capturedParams;
     const api = new Api({ name: 'test', version: '1.0.0' });
-    api.customize({
+    await api.customize({
       scopeMethods: {
         testMethod: async (handlerParams) => {
           capturedParams = Object.keys(handlerParams);
@@ -35,7 +35,7 @@ test('Scope Methods', async (t) => {
       }
     });
 
-    api.addScope('users', { custom: 'option' });
+    await api.addScope('users', { custom: 'option' });
     await api.scopes.users.testMethod({ test: true });
     
     // Check all expected parameters are present
@@ -47,7 +47,7 @@ test('Scope Methods', async (t) => {
 
   await t.test('should access scope options in methods', async () => {
     const api = new Api({ name: 'test', version: '1.0.0' });
-    api.customize({
+    await api.customize({
       scopeMethods: {
         getSchema: async ({ scopeOptions }) => {
           return scopeOptions.schema;
@@ -55,7 +55,7 @@ test('Scope Methods', async (t) => {
       }
     });
 
-    api.addScope('users', { schema: { name: 'string' } });
+    await api.addScope('users', { schema: { name: 'string' } });
     const result = await api.scopes.users.getSchema();
     assert.deepEqual(result, { name: 'string' });
   });
@@ -65,9 +65,9 @@ test('Scope Methods', async (t) => {
     assert.equal(api.scopes.nonexistent, undefined);
   });
 
-  await t.test('should throw error on direct scope call', () => {
+  await t.test('should throw error on direct scope call', async () => {
     const api = new Api({ name: 'test', version: '1.0.0' });
-    api.addScope('users', {});
+    await api.addScope('users', {});
     
     assert.throws(
       () => api.scopes.users(),
@@ -78,13 +78,13 @@ test('Scope Methods', async (t) => {
   await t.test('should handle scope-specific methods', async () => {
     const api = new Api({ name: 'test', version: '1.0.0' });
     
-    api.addScope('users', {}, {
+    await api.addScope('users', {}, {
       scopeMethods: {
         customMethod: async () => 'users-specific'
       }
     });
     
-    api.addScope('posts', {});
+    await api.addScope('posts', {});
     
     // Method exists on users
     const result = await api.scopes.users.customMethod();
@@ -96,25 +96,25 @@ test('Scope Methods', async (t) => {
 
   await t.test('should handle numeric properties correctly', async () => {
     const api = new Api({ name: 'test', version: '1.0.0' });
-    api.addScope('users', {});
+    await api.addScope('users', {});
     
     // Numeric properties should return undefined
     assert.equal(api.scopes.users[123], undefined);
     assert.equal(api.scopes.users['123'], undefined);
   });
 
-  await t.test('should throw error for invalid scope name', () => {
+  await t.test('should throw error for invalid scope name', async () => {
     const api = new Api({ name: 'test', version: '1.0.0' });
-    assert.throws(
+    await assert.rejects(
       () => api.addScope('invalid-name', {}),
       ValidationError
     );
   });
 
-  await t.test('should throw error for duplicate scope', () => {
+  await t.test('should throw error for duplicate scope', async () => {
     const api = new Api({ name: 'test', version: '1.0.0' });
-    api.addScope('users', {});
-    assert.throws(
+    await api.addScope('users', {});
+    await assert.rejects(
       () => api.addScope('users', {}),
       ScopeError
     );
@@ -122,7 +122,7 @@ test('Scope Methods', async (t) => {
 
   await t.test('should merge vars and helpers at scope level', async () => {
     const api = new Api({ name: 'test', version: '1.0.0' });
-    api.customize({
+    await api.customize({
       vars: { global: 'global-value', shared: 'global-shared' },
       helpers: { globalHelper: () => 'global' },
       scopeMethods: {
@@ -138,7 +138,7 @@ test('Scope Methods', async (t) => {
       }
     });
 
-    api.addScope('users', {}, {
+    await api.addScope('users', {}, {
       vars: { scope: 'scope-value', shared: 'scope-shared' },
       helpers: { scopeHelper: () => 'scope' }
     });

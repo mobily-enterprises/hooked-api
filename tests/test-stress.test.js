@@ -977,7 +977,7 @@ test('Complex scope interactions', async (t) => {
     const api = new Api({ name: 'cross-scope', version: '1.0.0' });
     const callLog = [];
 
-    api.customize({
+    await api.customize({
       scopeMethods: {
         callOther: async ({ params, scopes, scopeName }) => {
           callLog.push(`${scopeName} calling ${params.target}`);
@@ -989,9 +989,9 @@ test('Complex scope interactions', async (t) => {
       }
     });
 
-    api.addScope('scope1', {});
-    api.addScope('scope2', {});
-    api.addScope('scope3', {});
+    await api.addScope('scope1', {});
+    await api.addScope('scope2', {});
+    await api.addScope('scope3', {});
 
     const result = await api.scopes.scope1.callOther({ target: 'scope2' });
     assert.equal(result, 'Data from scope2 requested by scope1');
@@ -1001,7 +1001,7 @@ test('Complex scope interactions', async (t) => {
   await t.test('should handle recursive scope method calls', async () => {
     const api = new Api({ name: 'recursive', version: '1.0.0' });
     
-    api.customize({
+    await api.customize({
       scopeMethods: {
         fibonacci: async ({ params, scope }) => {
           if (params.n <= 1) return params.n;
@@ -1016,7 +1016,7 @@ test('Complex scope interactions', async (t) => {
       }
     });
 
-    api.addScope('math', {});
+    await api.addScope('math', {});
     
     const result = await api.scopes.math.fibonacci({ n: 10 });
     assert.equal(result, 55);
@@ -1026,21 +1026,21 @@ test('Complex scope interactions', async (t) => {
     const api = new Api({ name: 'override', version: '1.0.0' });
     
     // Define global scope method
-    api.customize({
+    await api.customize({
       scopeMethods: {
         getName: async ({ scopeName }) => `Global: ${scopeName}`
       }
     });
 
     // Add scope with override
-    api.addScope('special', {}, {
+    await api.addScope('special', {}, {
       scopeMethods: {
         getName: async ({ scopeName }) => `Special: ${scopeName}`
       }
     });
 
     // Add normal scope
-    api.addScope('normal', {});
+    await api.addScope('normal', {});
 
     const special = await api.scopes.special.getName();
     const normal = await api.scopes.normal.getName();
@@ -1084,7 +1084,7 @@ test('Complex scope interactions', async (t) => {
       logging: { level: 'warn', logger: customLogger }
     });
 
-    api.customize({
+    await api.customize({
       scopeMethods: {
         logTest: async ({ log }) => {
           log.trace('trace message');
@@ -1097,8 +1097,8 @@ test('Complex scope interactions', async (t) => {
     });
 
     // Add scope with debug logging
-    api.addScope('verbose', { logging: { level: 'debug' } });
-    api.addScope('quiet', { logging: { level: 'error' } });
+    await api.addScope('verbose', { logging: { level: 'debug' } });
+    await api.addScope('quiet', { logging: { level: 'error' } });
 
     logs.length = 0;
     await api.scopes.verbose.logTest();

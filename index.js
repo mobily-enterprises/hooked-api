@@ -692,6 +692,76 @@ export class Api {
   }
   
   /**
+   * Sanitizes objects for logging to prevent verbose output from function-heavy objects
+   * 
+   * @private
+   * @param {*} obj - Object to sanitize
+   * @param {Set} [visited=new Set()] - Set to track visited objects (prevents circular references)
+   * @param {number} [depth=0] - Current recursion depth
+   * @param {number} [maxDepth=5] - Maximum recursion depth
+   * @returns {*} Sanitized version of the object
+   * 
+   * This method:
+   * - Replaces functions with "[Function]"
+   * - Replaces objects with many function properties with "[Object with methods]"
+   * - Preserves primitive values and simple objects
+   * - Handles circular references
+   * - Limits recursion depth for performance
+   */
+  _sanitizeForLogging(obj, visited = new Set(), depth = 0, maxDepth = 5) {
+    // Handle primitives and null
+    if (obj === null || typeof obj !== 'object') {
+      return typeof obj === 'function' ? '[Function]' : obj;
+    }
+    
+    // Handle circular references
+    if (visited.has(obj)) {
+      return '[Circular]';
+    }
+    
+    // Limit recursion depth
+    if (depth > maxDepth) {
+      return '[Object too deep]';
+    }
+    
+    visited.add(obj);
+    
+    // Handle arrays
+    if (Array.isArray(obj)) {
+      const result = obj.map(item => this._sanitizeForLogging(item, visited, depth + 1, maxDepth));
+      visited.delete(obj);
+      return result;
+    }
+    
+    // Handle objects
+    const keys = Object.keys(obj);
+    const functionCount = keys.filter(key => typeof obj[key] === 'function').length;
+    
+    // If more than 50% of properties are functions, it's likely a class instance
+    if (functionCount > 0 && functionCount >= keys.length * 0.5) {
+      visited.delete(obj);
+      return '[Object with methods]';
+    }
+    
+    // Otherwise, recursively sanitize properties
+    const result = {};
+    for (const key of keys) {
+      try {
+        const value = obj[key];
+        result[key] = typeof value === 'function' 
+          ? '[Function]' 
+          : this._sanitizeForLogging(value, visited, depth + 1, maxDepth);
+      } catch (error) {
+        // Handle getters that throw
+        result[key] = '[Error reading property]';
+      }
+    }
+    
+    visited.delete(obj);
+    return result;
+  }
+  
+  /**
    * Formats and outputs log messages with appropriate styling
    * 
    * @private
@@ -744,15 +814,18 @@ export class Api {
      * - Includes data parameter when provided
      */
     if (data !== undefined) {
+      // Sanitize the data before logging
+      const sanitizedData = this._sanitizeForLogging(data);
+      
       if (loggingOpts.format === 'json') {
-        customLogger.log(JSON.stringify({ level: levelName, api: apiName, context, message, data, timestamp }));
+        customLogger.log(JSON.stringify({ level: levelName, api: apiName, context, message, data: sanitizedData, timestamp }));
       } else {
         if (level === LogLevel.ERROR) {
-          customLogger.error(output, data);
+          customLogger.error(output, sanitizedData);
         } else if (level === LogLevel.WARN) {
-          customLogger.warn(output, data);
+          customLogger.warn(output, sanitizedData);
         } else {
-          customLogger.log(output, data);
+          customLogger.log(output, sanitizedData);
         }
       }
     } else {
@@ -2338,4 +2411,3 @@ export class Api {
  */
 export const resetGlobalRegistryForTesting = () => {
   globalRegistry = new Map()
-}

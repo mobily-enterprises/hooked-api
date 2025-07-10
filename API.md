@@ -15,9 +15,13 @@ The API instance exposes these public properties and methods:
 - `await api.addScope(name, options, extras)` - Add scopes with configuration and optional customizations
 - `api.setScopeAlias(aliasName, addScopeAlias)` - Create aliases for the scopes property and addScope method
 - `api.scopes` - Access to defined scopes (e.g., `api.scopes.users.get()`)
+  - `api.scopes.[scopeName].vars` - Direct access to scope variables (falls back to global vars)
+  - `api.scopes.[scopeName].helpers` - Direct access to scope helpers (falls back to global helpers)
 - `api.[aliasName]` - If setScopeAlias was called (e.g., `api.tables` for database APIs)
 - `api.[addScopeAlias]` - If setScopeAlias was called with second parameter (e.g., `api.addTable`)
 - `api.[methodName]()` - Direct calls to defined API methods
+- `api.vars` - Direct proxy access to global variables
+- `api.helpers` - Direct proxy access to global helpers
 - `api.options` - Read-only access to the API configuration (includes name, version, and merged logging config)
 
 ### Static Methods

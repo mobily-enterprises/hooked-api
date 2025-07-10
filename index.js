@@ -2039,11 +2039,15 @@ export class Api {
     
     this._logger.info(`Scope '${name}' added successfully`);
     
+    // Build scope context for the event
+    const scopeContext = this._buildScopeContext(name);
+    
     // Emit event for plugins to react to scope creation
     this._emit('scope:added', {
       scopeName: name,
       scopeOptions: options,
-      scopeExtras: extras
+      scopeExtras: extras,
+      scope: scopeContext  // Full context with vars, helpers, runHooks, etc.
     });
     
     return this;
@@ -2411,3 +2415,4 @@ export class Api {
  */
 export const resetGlobalRegistryForTesting = () => {
   globalRegistry = new Map()
+}

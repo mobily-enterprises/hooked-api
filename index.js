@@ -485,6 +485,14 @@ export class Api {
                 return undefined;
               }
               
+              // Check for vars and helpers access
+              if (prop === 'vars') {
+                return scopeConfig._varsProxy;
+              }
+              if (prop === 'helpers') {
+                return scopeConfig._helpersProxy;
+              }
+              
               // Find handler - check scope-specific methods first, then global scope methods
               const handler = scopeConfig._scopeMethods?.get(prop) || this._scopeMethods.get(prop);
               if (!handler) {
@@ -612,6 +620,14 @@ export class Api {
          * Check for API methods first
          * These are dynamically added methods like api.create(), api.find()
          */
+        // Check for vars and helpers access
+        if (prop === 'vars') {
+          return target._varsProxy;
+        }
+        if (prop === 'helpers') {
+          return target._helpersProxy;
+        }
+        
         if (target._apiMethods.has(prop)) {
           /**
            * Return a bound async function that executes the method
@@ -1246,46 +1262,6 @@ export class Api {
     }
     
     /**
-     * Merge variables with scope precedence
-     * This allows scopes to override global defaults while
-     * still having access to global vars
-     */
-    const mergedVars = new Map([
-      ...this._vars,        // Global vars first
-      ...scopeConfig._vars  // Scope vars override
-    ]);
-    const varsProxy = new Proxy({}, {
-      get: (target, prop) => mergedVars.get(prop),
-      set: (target, prop, value) => {
-        // Prevent prototype pollution
-        if (isDangerousProp(prop)) {
-          return true; // Silently ignore but return true to prevent TypeError
-        }
-        mergedVars.set(prop, value);
-        return true;
-      }
-    });
-    
-    // Merge helpers: scope helpers take precedence
-    const mergedHelpers = new Map([
-      ...this._helpers,
-      ...scopeConfig._helpers
-    ]);
-    const helpersProxy = new Proxy({}, {
-      get: (target, prop) => mergedHelpers.get(prop),
-      set: (target, prop, value) => {
-        // Prevent prototype pollution
-        if (isDangerousProp(prop)) {
-          return true; // Silently ignore but return true to prevent TypeError
-        }
-        mergedHelpers.set(prop, value);
-        return true;
-      }
-    });
-    
-    // Keep options separate and frozen
-    
-    /**
      * Handle scope-specific logging configuration
      * Scopes can have their own log levels for fine-grained control
      * Example: Set 'debug' for problematic scopes while keeping global at 'info'
@@ -1298,10 +1274,10 @@ export class Api {
     // Create logger for scope context
     const log = this._createContextLogger(scopeName, effectiveLogLevel);
     
-    // Return flattened context for scope handlers
+    // Return flattened context for scope handlers - now using pre-built proxies
     return {
-      vars: varsProxy,
-      helpers: helpersProxy,
+      vars: scopeConfig._varsProxy,      // Use pre-built proxy
+      helpers: scopeConfig._helpersProxy, // Use pre-built proxy
       scopes: this.scopes,
       runHooks: (name, context, params) => this._runHooks(name, context, params, scopeName),
       log,
@@ -1326,10 +1302,10 @@ export class Api {
     // Create logger for global context
     const log = this._createContextLogger('global');
     
-    // Return flattened context for global handlers
+    // Return flattened context for global handlers - already using proxies
     return {
-      vars: this._varsProxy,
-      helpers: this._helpersProxy,
+      vars: this._varsProxy,      // Already a proxy
+      helpers: this._helpersProxy, // Already a proxy
       scopes: this.scopes,
       runHooks: this._runHooks.bind(this),
       log,
@@ -2029,13 +2005,60 @@ export class Api {
      * Options are frozen to prevent modification after creation
      * Internal properties use underscore prefix for consistency
      */
-    this._scopes.set(name, {
+    const scopeConfig = {
       options: Object.freeze({ ...options }),         // User-provided configuration
       _apiMethods: new Map(Object.entries(apiMethods)), // Scope-specific API methods (rarely used)
       _scopeMethods: new Map(Object.entries(scopeMethods)), // Scope-specific methods
       _vars: new Map(Object.entries(vars)),            // Scope variables
       _helpers: new Map(Object.entries(helpers))       // Scope helper functions
+    };
+    
+    /**
+     * Create scope-specific vars proxy
+     * Checks scope vars first, then falls back to global vars
+     */
+    const scopeVarsProxy = new Proxy({}, {
+      get: (target, prop) => {
+        if (scopeConfig._vars.has(prop)) {
+          return scopeConfig._vars.get(prop);
+        }
+        return this._vars.get(prop);
+      },
+      set: (target, prop, value) => {
+        if (isDangerousProp(prop)) {
+          return true; // Silently ignore but return true to prevent TypeError
+        }
+        scopeConfig._vars.set(prop, value);
+        return true;
+      }
     });
+    
+    /**
+     * Create scope-specific helpers proxy
+     * Checks scope helpers first, then falls back to global helpers
+     */
+    const scopeHelpersProxy = new Proxy({}, {
+      get: (target, prop) => {
+        if (scopeConfig._helpers.has(prop)) {
+          return scopeConfig._helpers.get(prop);
+        }
+        return this._helpers.get(prop);
+      },
+      set: (target, prop, value) => {
+        if (isDangerousProp(prop)) {
+          return true; // Silently ignore but return true to prevent TypeError
+        }
+        scopeConfig._helpers.set(prop, value);
+        return true;
+      }
+    });
+    
+    // Store the proxies in the scope configuration
+    scopeConfig._varsProxy = scopeVarsProxy;
+    scopeConfig._helpersProxy = scopeHelpersProxy;
+    
+    // Add the scope configuration to the scopes map
+    this._scopes.set(name, scopeConfig);
     
     this._logger.info(`Scope '${name}' added successfully`);
     
@@ -2047,7 +2070,9 @@ export class Api {
       scopeName: name,
       scopeOptions: options,
       scopeExtras: extras,
-      scope: scopeContext  // Full context with vars, helpers, runHooks, etc.
+      scope: scopeContext,  // Full context with vars, helpers, runHooks, etc.
+      vars: scopeVarsProxy,    // Direct access to scope vars proxy
+      helpers: scopeHelpersProxy  // Direct access to scope helpers proxy
     });
     
     return this;

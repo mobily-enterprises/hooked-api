@@ -1,3 +1,4 @@
+
 /**
  * Hooked API - A flexible API framework with hooks, plugins, and scopes
  * 
@@ -370,9 +371,6 @@ export class Api {
     /** Custom addScope method name (e.g., 'addTable' instead of 'addScope') */
     this._addScopeAlias = null
     
-    /** Event listener storage: Map<eventName, Array<{pluginName, listenerName, handler}>> */
-    this._eventListeners = new Map()
-   
     /**
      * Initialize the logging system
      * Supports both string ('debug', 'info') and numeric (0-4) log levels
@@ -664,7 +662,7 @@ export class Api {
               scopes: target.scopes,  // All scopes proxy
               
               // Capabilities
-              runHooks: (name) => target._runHooks(name, context, params),
+              runHooks: (name) => target._runHooks(name, context, params, null),
               log,
               
               // Metadata
@@ -1420,153 +1418,7 @@ export class Api {
     return allSuccessful;
   }
 
-  /**
-   * Registers an event listener
-   * 
-   * @private
-   * @param {string} eventName - Name of the event (e.g., 'scope:added')
-   * @param {string} pluginName - Name of the plugin adding the listener
-   * @param {string} listenerName - Name of the listener function for debugging
-   * @param {Function} handler - The event handler function
-   * @returns {Api} This instance for chaining
-   * @throws {ValidationError} If parameters are invalid
-   * 
-   * Events are notifications about system lifecycle changes.
-   * Unlike hooks, events cannot modify behavior or stop execution.
-   */
-  _on(eventName, pluginName, listenerName, handler) {
-    // Validate parameters
-    if (!eventName?.trim()) {
-      throw new ValidationError(
-        `Event name must be a non-empty string. Received: ${eventName === undefined ? 'undefined' : eventName === null ? 'null' : `"${eventName}"`}`,
-        { field: 'eventName', value: eventName, validValues: 'non-empty string' }
-      );
-    }
-    if (!pluginName?.trim()) {
-      throw new ValidationError(
-        `Plugin name must be a non-empty string. Received: ${pluginName === undefined ? 'undefined' : pluginName === null ? 'null' : `"${pluginName}"`}`,
-        { field: 'pluginName', value: pluginName, validValues: 'non-empty string' }
-      );
-    }
-    if (!listenerName?.trim()) {
-      throw new ValidationError(
-        `Listener name must be a non-empty string. Received: ${listenerName === undefined ? 'undefined' : listenerName === null ? 'null' : `"${listenerName}"`}`,
-        { field: 'listenerName', value: listenerName, validValues: 'non-empty string' }
-      );
-    }
-    if (typeof handler !== 'function') {
-      throw new ValidationError(
-        `Event handler must be a function. Received: ${typeof handler}`,
-        { field: 'handler', value: handler, validValues: 'function' }
-      );
-    }
-
-    // Initialize listener array if needed
-    if (!this._eventListeners.has(eventName)) {
-      this._eventListeners.set(eventName, []);
-    }
-
-    // Add the listener
-    const listeners = this._eventListeners.get(eventName);
-    listeners.push({ pluginName, listenerName, handler });
-
-    this._logger.trace(`Event listener '${listenerName}' registered for '${eventName}'`, { plugin: pluginName });
-    return this;
-  }
-
-  /**
-   * Emits an event to all registered listeners
-   * 
-   * @private
-   * @param {string} eventName - Name of the event to emit
-   * @param {Object} eventData - Data to pass to event handlers
-   * @returns {Promise<void>}
-   * 
-   * Events are fire-and-forget notifications. They:
-   * - Run asynchronously but in sequence
-   * - Cannot stop execution or modify data
-   * - Log errors but don't propagate them
-   * - Provide a simpler context than hooks
-   */
-  async _emit(eventName, eventData = {}) {
-    const listeners = this._eventListeners.get(eventName) || [];
-    if (listeners.length === 0) {
-      this._logger.trace(`No listeners for event '${eventName}'`);
-      return;
-    }
-
-    this._logger.debug(`Emitting event '${eventName}'`, { listenerCount: listeners.length });
-
-    // Create event context - simpler than hook context
-    const log = this._createContextLogger(`event:${eventName}`);
-    const eventContext = {
-      eventName,
-      eventData,
-      api: {
-        vars: this._varsProxy,
-        helpers: this._helpersProxy,
-        scopes: this.scopes,
-        options: Object.freeze({ ...this._apiOptions }),
-        pluginOptions: Object.freeze({ ...this._pluginOptions })
-      },
-      log
-    };
-
-    // Execute listeners sequentially
-    for (const { pluginName, listenerName, handler } of listeners) {
-      const startTime = Date.now();
-      this._logger.trace(`Event listener '${listenerName}' starting`, { plugin: pluginName, event: eventName });
-
-      try {
-        await handler(eventContext);
-        const duration = Date.now() - startTime;
-        this._logger.trace(`Event listener '${listenerName}' completed`, { 
-          plugin: pluginName, 
-          event: eventName, 
-          duration: `${duration}ms` 
-        });
-      } catch (error) {
-        const duration = Date.now() - startTime;
-        
-        this._logger.error(`Event listener '${listenerName}' failed`, { 
-          plugin: pluginName, 
-          event: eventName, 
-          error: error.message, 
-          duration: `${duration}ms` 
-        });
-        throw error; // Re-throw to allow caller to handle if needed
-      }
-    }
-  }
-
-  /**
-   * Removes a specific event listener
-   * 
-   * @private
-   * @param {string} eventName - Name of the event
-   * @param {string} listenerName - Name of the listener to remove
-   * @returns {boolean} True if listener was found and removed
-   */
-  _removeListener(eventName, listenerName) {
-    const listeners = this._eventListeners.get(eventName);
-    if (!listeners) return false;
-
-    const initialLength = listeners.length;
-    const filtered = listeners.filter(l => l.listenerName !== listenerName);
-    
-    if (filtered.length < initialLength) {
-      if (filtered.length === 0) {
-        this._eventListeners.delete(eventName);
-      } else {
-        this._eventListeners.set(eventName, filtered);
-      }
-      this._logger.trace(`Event listener '${listenerName}' removed from '${eventName}'`);
-      return true;
-    }
-    
-    return false;
-  }
-
+  
   /**
    * Adds a method directly to the API instance
    * 
@@ -1654,11 +1506,16 @@ export class Api {
     this._apiMethods.set(method, handler)
     this._logger.trace(`Added API method '${method}'`);
     
-    // Emit event for plugins to react to method creation
-    await this._emit('method:api:added', {
+    // Run hook for plugins to react to method creation, passing mutable context
+    // Hooks can potentially wrap or replace the handler here.
+    const hookContext = {
       methodName: method,
-      handler: handler
-    });
+      handler: handler // Pass the handler in context for potential modification
+    };
+    await this._runHooks('method:api:added', hookContext);
+
+    // Apply any handler mutations made by hooks back to the stored method
+    this._apiMethods.set(method, hookContext.handler);
     
     return this
   }
@@ -1730,21 +1587,20 @@ export class Api {
       )
     }
     
-    await this._emit('method:scope:adding', {
+    // Run hook before adding the scope method, allowing mutation or checks
+    const hookContext = {
       methodName: method,
-      handler: handler
-    });
-    
+      handler: handler // Pass the handler in context for potential modification
+    };
+    await this._runHooks('method:scope:adding', hookContext);
+
     // Scope methods don't need property conflict checking since they're not on the main API
     this._scopeMethods.set(method, handler)
     this._logger.trace(`Added scope method '${method}'`);
     
-    // Emit event for plugins to react to scope method creation
-    await this._emit('method:scope:added', {
-      methodName: method,
-      handler: handler
-    });
-    
+    // Run hook after adding the scope method
+    await this._runHooks('method:scope:added', hookContext);
+
     return this
   }
 
@@ -1856,6 +1712,12 @@ export class Api {
     return this;
   }
 
+
+
+
+
+
+  
   /**
    * Creates a new scope with its own methods, vars, and configuration
    * 
@@ -1873,10 +1735,11 @@ export class Api {
    * - Scope methods have access to both global and scope-specific data
    * - Scopes can have custom logging levels and configuration
    */
-  async _addScope(name, options = {}, extras = {}) {
+async _addScope(name, options = {}, extras = {}) {
+  // Initial validation - This block remains exactly as it was.
     if (!name || typeof name !== 'string') {
-      const received = name === undefined ? 'undefined' : 
-                      name === null ? 'null' : 
+      const received = name === undefined ? 'undefined' :
+                      name === null ? 'null' :
                       name === '' ? 'empty string' :
                       `${typeof name} "${name}"`;
       throw new ValidationError(
@@ -1890,7 +1753,7 @@ export class Api {
     }
     if (!VALID_JS_IDENTIFIER.test(name)) {
       const invalidChars = name.match(/[^a-zA-Z0-9_$]/g);
-      const suggestion = invalidChars ? 
+      const suggestion = invalidChars ?
         `Remove invalid characters: ${[...new Set(invalidChars)].join(', ')}` :
         'Scope name must start with a letter, underscore, or $';
       throw new ValidationError(
@@ -1922,9 +1785,10 @@ export class Api {
         }
       );
     }
-    
+
+    // Extract extras at the beginning of the logic block
     const { hooks = {}, apiMethods = {}, scopeMethods = {}, vars = {}, helpers = {} } = extras;
-    
+
     // Log what's being added
     const additions = [];
     if (Object.keys(hooks).length > 0) additions.push(`${Object.keys(hooks).length} hooks`);
@@ -1932,19 +1796,122 @@ export class Api {
     if (Object.keys(scopeMethods).length > 0) additions.push(`${Object.keys(scopeMethods).length} scope methods`);
     if (Object.keys(vars).length > 0) additions.push(`${Object.keys(vars).length} vars`);
     if (Object.keys(helpers).length > 0) additions.push(`${Object.keys(helpers).length} helpers`);
-    
+
     if (additions.length > 0) {
       this._logger.trace(`Scope '${name}' includes: ${additions.join(', ')}`);
     }
-    
+
     /**
-     * Process scope-specific hooks
-     * These hooks only run when methods on this specific scope are called
-     * They're wrapped to check scopeName before execution
+     * Initialize scope configuration.
+     * Options are frozen after setup, but internal maps are mutable through their proxies.
+     */
+    const scopeConfig = {
+      options: { ...options }, // User-provided options (will be frozen after hooks)
+      _apiMethods: new Map(Object.entries(apiMethods)),
+      _scopeMethods: new Map(Object.entries(scopeMethods)),
+      _vars: new Map(Object.entries(vars)),
+      _helpers: new Map(Object.entries(helpers))
+    };
+
+    /**
+     * Create scope-specific vars proxy.
+     * Checks scope vars first, then falls back to global vars.
+     * This proxy interacts directly with `scopeConfig._vars`.
+     */
+    scopeConfig._varsProxy = new Proxy({}, {
+      get: (target, prop) => {
+        if (isDangerousProp(prop)) return undefined;
+        if (scopeConfig._vars.has(prop)) {
+          return scopeConfig._vars.get(prop);
+        }
+        return this._vars.get(prop); // Fallback to global vars
+      },
+      set: (target, prop, value) => {
+        if (isDangerousProp(prop)) {
+          this._logger.warn(`Attempted to set dangerous property '${prop}' on scope '${name}' vars. Ignored.`);
+          return true; // Silently ignore but return true to prevent TypeError
+        }
+        scopeConfig._vars.set(prop, value);
+        return true;
+      },
+      // Ensure iteration/inspection works for proxies
+      ownKeys: (target) => Array.from(new Set([...scopeConfig._vars.keys(), ...this._vars.keys()])),
+      getOwnPropertyDescriptor: (target, prop) => {
+        if (isDangerousProp(prop)) return undefined;
+        if (scopeConfig._vars.has(prop)) {
+          return { value: scopeConfig._vars.get(prop), enumerable: true, configurable: true };
+        }
+        // Fallback to global proxy's descriptor if it's there
+        return Object.getOwnPropertyDescriptor(this._varsProxy, prop);
+      }
+    });
+
+    /**
+     * Create scope-specific helpers proxy.
+     * Checks scope helpers first, then falls back to global helpers.
+     * This proxy interacts directly with `scopeConfig._helpers`.
+     */
+    scopeConfig._helpersProxy = new Proxy({}, {
+      get: (target, prop) => {
+        if (isDangerousProp(prop)) return undefined;
+        if (scopeConfig._helpers.has(prop)) {
+          return scopeConfig._helpers.get(prop);
+        }
+        return this._helpers.get(prop); // Fallback to global helpers
+      },
+      set: (target, prop, value) => {
+        if (isDangerousProp(prop)) {
+          this._logger.warn(`Attempted to set dangerous property '${prop}' on scope '${name}' helpers. Ignored.`);
+          return true;
+        }
+        scopeConfig._helpers.set(prop, value);
+        return true;
+      },
+      // Ensure iteration/inspection works for proxies
+      ownKeys: (target) => Array.from(new Set([...scopeConfig._helpers.keys(), ...this._helpers.keys()])),
+      getOwnPropertyDescriptor: (target, prop) => {
+        if (isDangerousProp(prop)) return undefined;
+        if (scopeConfig._helpers.has(prop)) {
+          return { value: scopeConfig._helpers.get(prop), enumerable: true, configurable: true };
+        }
+        // Fallback to global proxy's descriptor if it's there
+        return Object.getOwnPropertyDescriptor(this._helpersProxy, prop);
+      }
+    });
+
+    // Add the scope configuration to the scopes map NOW.
+    // This makes it discoverable by _buildScopeContext and future lookups.
+    this._scopes.set(name, scopeConfig);
+
+    this._logger.info(`Scope '${name}' added successfully`);
+
+    // Build scope context for the informational hook.
+    // This context contains proxies for vars/helpers and basic info.
+    const informationalScopeContext = {
+        scopeName: name, // Main piece of info
+        scopeOptions: { ...options }, // Immutable copy of initial options
+        scopeExtras: { ...extras },   // Immutable copy of initial extras (for informational purposes)
+        vars: scopeConfig._varsProxy,    // Proxy for current scope vars (can be mutated via proxy methods)
+        helpers: scopeConfig._helpersProxy, // Proxy for current scope helpers (can be mutated via proxy methods)
+        // Note: Direct access to _vars, _helpers, _scopeMethods Maps is intentionally NOT provided here,
+        // aligning with the "informational only" and no direct internal mutation principle for system hooks.
+    };
+
+    // Run the 'scope:added' hook. The context is an informational object.
+    await this._runHooks('scope:added', informationalScopeContext);
+
+    // Freeze the original options of the scopeConfig *after* the informational hook has run.
+    // This doesn't apply to `informationalScopeContext.scopeOptions` as that's a copy.
+    scopeConfig.options = Object.freeze(scopeConfig.options);
+
+    /**
+     * Process scope-specific hooks defined in `extras.hooks`.
+     * This needs to be done *after* the scope is added to `this._scopes`
+     * so that the `_addHook` method can correctly find and attribute them.
      */
     for (const [hookName, hookDef] of Object.entries(hooks)) {
       let handler, functionName, hookAddOptions
-      
+
       if (typeof hookDef === 'function') {
         handler = hookDef
         functionName = hookName
@@ -1955,9 +1922,9 @@ export class Api {
         const { handler: _, functionName: __, ...rest } = hookDef
         hookAddOptions = rest
       } else {
-        const received = hookDef === undefined ? 'undefined' : 
-                        hookDef === null ? 'null' : 
-                        `${typeof hookDef}`;
+        const received = hookDef === undefined ? 'undefined' :
+                         hookDef === null ? 'null' :
+                         `${typeof hookDef}`;
         throw new ValidationError(
           `Hook '${hookName}' in scope '${name}' must be a function or object. Received: ${received}. Examples:\n` +
           `  As function: hooks: { myHook: async (context) => { /* code */ } }\n` +
@@ -1969,7 +1936,7 @@ export class Api {
           }
         )
       }
-      
+
       if (typeof handler !== 'function') {
         const received = handler === undefined ? 'undefined' : `${typeof handler}`;
         throw new ValidationError(
@@ -1982,100 +1949,20 @@ export class Api {
           }
         )
       }
-      
-      /**
-       * Wrap the handler to make it scope-specific
-       * This ensures the hook only runs for methods on this scope,
-       * not for methods on other scopes or global methods
-       */
-      const scopeName = name; // Capture scope name in closure
+
+      // Use the 'name' from the _addScope parameters as the scopeName for the wrapper
+      const hookTargetScopeName = name;
       const wrappedHandler = (handlerParams) => {
-        if (handlerParams.scopeName === scopeName) {
+        if (handlerParams.scopeName === hookTargetScopeName) {
           return handler(handlerParams);
         }
         // Return undefined (not false) to continue chain for other scopes
       };
-      
+
       this._addHook(hookName, `scope-custom:${name}`, functionName, hookAddOptions, wrappedHandler)
       this._logger.trace(`Added scope-specific hook '${hookName}' for scope '${name}'`);
     }
-    
-    /**
-     * Store scope configuration
-     * Options are frozen to prevent modification after creation
-     * Internal properties use underscore prefix for consistency
-     */
-    const scopeConfig = {
-      options: Object.freeze({ ...options }),         // User-provided configuration
-      _apiMethods: new Map(Object.entries(apiMethods)), // Scope-specific API methods (rarely used)
-      _scopeMethods: new Map(Object.entries(scopeMethods)), // Scope-specific methods
-      _vars: new Map(Object.entries(vars)),            // Scope variables
-      _helpers: new Map(Object.entries(helpers))       // Scope helper functions
-    };
-    
-    /**
-     * Create scope-specific vars proxy
-     * Checks scope vars first, then falls back to global vars
-     */
-    const scopeVarsProxy = new Proxy({}, {
-      get: (target, prop) => {
-        if (scopeConfig._vars.has(prop)) {
-          return scopeConfig._vars.get(prop);
-        }
-        return this._vars.get(prop);
-      },
-      set: (target, prop, value) => {
-        if (isDangerousProp(prop)) {
-          return true; // Silently ignore but return true to prevent TypeError
-        }
-        scopeConfig._vars.set(prop, value);
-        return true;
-      }
-    });
-    
-    /**
-     * Create scope-specific helpers proxy
-     * Checks scope helpers first, then falls back to global helpers
-     */
-    const scopeHelpersProxy = new Proxy({}, {
-      get: (target, prop) => {
-        if (scopeConfig._helpers.has(prop)) {
-          return scopeConfig._helpers.get(prop);
-        }
-        return this._helpers.get(prop);
-      },
-      set: (target, prop, value) => {
-        if (isDangerousProp(prop)) {
-          return true; // Silently ignore but return true to prevent TypeError
-        }
-        scopeConfig._helpers.set(prop, value);
-        return true;
-      }
-    });
-    
-    // Store the proxies in the scope configuration
-    scopeConfig._varsProxy = scopeVarsProxy;
-    scopeConfig._helpersProxy = scopeHelpersProxy;
-    
-    // Add the scope configuration to the scopes map
-    this._scopes.set(name, scopeConfig);
-    
-    this._logger.info(`Scope '${name}' added successfully`);
-    
-    // Build scope context for the event
-    const scopeContext = this._buildScopeContext(name);
-    
-    // Emit event for plugins to react to scope creation
-    // IMPORTANT: Wait for event handlers to complete before returning
-    await this._emit('scope:added', {
-      scopeName: name,
-      scopeOptions: options,
-      scopeExtras: extras,
-      scope: scopeContext,  // Full context with vars, helpers, runHooks, etc.
-      vars: scopeVarsProxy,    // Direct access to scope vars proxy
-      helpers: scopeHelpersProxy  // Direct access to scope helpers proxy
-    });
-    
+
     return this;
   }
 
@@ -2346,21 +2233,12 @@ export class Api {
         },
         
         /**
-         * Event listener registration for system lifecycle notifications
-         * Events are simpler than hooks - they notify but don't modify behavior
-         */
-        on: (eventName, listenerName, handler) => {
-          api._logger.trace(`Plugin '${plugin.name}' adding event listener '${listenerName}' for '${eventName}'`);
-          return api._on(eventName, plugin.name, listenerName, handler);
-        },
-        
-        /**
          * Run hooks from plugin context
          * Allows plugins to create their own hookable operations
          */
         runHooks: (hookName, context = {}, params = {}) => {
           api._logger.trace(`Plugin '${plugin.name}' running hooks for '${hookName}'`);
-          return api._runHooks(hookName, context, params);
+          return api._runHooks(hookName, context, params, null); // Explicitly pass null for scopeName
         },
         
         /**
@@ -2399,12 +2277,13 @@ export class Api {
       const duration = Date.now() - startTime;
       this._logger.info(`Plugin '${plugin.name}' installed successfully`, { duration: `${duration}ms` });
       
-      // Emit event for other plugins to react to this plugin installation
-      await this._emit('plugin:installed', {
+      // Run hook for other plugins to react to this plugin installation
+      await this._runHooks('plugin:installed', {
         pluginName: plugin.name,
         pluginOptions: options,
-        plugin: plugin
+        plugin: plugin // The plugin object itself is informational context
       });
+
     } catch (error) {
       const duration = Date.now() - startTime;
       this._logger.error(`Failed to install plugin '${plugin.name}'`, { error: error.message, duration: `${duration}ms` });
@@ -2423,6 +2302,36 @@ export class Api {
     }
     return this
   }
+
+
+  // Add this new public method to your Api class
+  /**
+   * Executes a system-wide hook, triggering all registered handlers for that hook.
+   *
+   * This method allows any part of your application or another plugin to initiate
+   * a hook chain for a custom event or operation.
+   *
+   * @param {string} hookName - The name of the hook to run (e.g., 'beforeShutdown', 'dataImported').
+   * @param {object} mutableContextObject - A mutable object passed to all hook handlers.
+   * Handlers can read from and modify this object to share state or influence subsequent hooks.
+   * @param {object} [immutableParamsObject={}] - An optional object containing immutable parameters
+   * or metadata related to the hook execution. Handlers can read this, but should not modify it.
+   * @returns {Promise<boolean>} True if all hooks completed successfully, false if a hook stopped the chain.
+   * @throws {Error} If any hook handler throws an error, it will propagate.
+   */
+  async runHooks(hookName, mutableContextObject, immutableParamsObject = {}) {
+    if (typeof hookName !== 'string' || hookName.trim() === '') {
+        throw new ValidationError('Hook name must be a non-empty string.', { field: 'hookName', value: hookName, validValues: 'non-empty string' });
+    }
+    // Note: mutableContextObject could be any type of object, but for typical hook contexts,
+    // it's expected to be a non-null object. You might make this more flexible if
+    // your hooks genuinely accept primitives or null as context for some cases.
+    if (typeof mutableContextObject !== 'object' || mutableContextObject === null) {
+        throw new ValidationError('Mutable context object must be a non-null object.', { field: 'mutableContextObject', value: mutableContextObject, validValues: 'object' });
+    }
+    return this._runHooks(hookName, mutableContextObject, immutableParamsObject, null);
+  }
+
 }
 
 /**

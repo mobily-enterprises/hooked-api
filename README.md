@@ -1353,82 +1353,13 @@ In addition to hooks (which intercept and modify behavior of methods), Hooked AP
 
 ### Available Events
 
-The following system events are emitted:
+The following system hooks  are emitted:
 
 - `scope:added` - When a new scope is added to the API
 - `method:api:added` - When a new API method is added
 - `method:scope:adding` - When a scope method is about to be added (fires before `method:scope:added`)
 - `method:scope:added` - When a new scope method is added
 - `plugin:installed` - When a plugin is successfully installed
-
-### Using Events in Plugins
-
-Plugins can register event listeners using the `on` method:
-
-```javascript
-const LoggingPlugin = {
-  name: 'logging-plugin',
-  
-  install({ on, log }) {
-    // Listen for scope creation
-    on('scope:added', 'logNewScope', ({ eventData }) => {
-      log.info(`New scope created: ${eventData.scopeName}`);
-    });
-    
-    // Listen for plugin installations
-    on('plugin:installed', 'logPlugin', ({ eventData }) => {
-      log.info(`Plugin installed: ${eventData.pluginName}`);
-    });
-  }
-};
-```
-
-### Event Handler Context
-
-Event handlers receive a context object with:
-
-```javascript
-{
-  eventName: 'scope:added',        // The event that was triggered
-  eventData: {                     // Event-specific data
-    scopeName: 'users',
-    scopeOptions: { ... },
-    // ... other event-specific fields
-  },
-  api: {                          // API access
-    vars: { ... },                // API variables (proxy)
-    helpers: { ... },             // API helpers (proxy)
-    scopes: { ... },              // All scopes
-    options: { ... },             // API options (frozen)
-    pluginOptions: { ... }        // Plugin options (frozen)
-  },
-  log: { ... }                    // Logger for this event context
-}
-```
-
-### Practical Event Examples
-
-#### Auto-Configuration Plugin
-
-Automatically configure new scopes as they're added:
-
-```javascript
-const AutoConfigPlugin = {
-  name: 'auto-config',
-  
-  install({ on, addHook }) {
-    on('scope:added', 'configureScope', ({ eventData, api }) => {
-      const { scopeName } = eventData;
-      
-      // Add scope-specific configuration
-      api.vars[`${scopeName}CacheTimeout`] = 5000;
-      
-      // Log the configuration
-      console.log(`Auto-configured scope: ${scopeName}`);
-    });
-  }
-};
-```
 
 #### Cross-Plugin Communication
 

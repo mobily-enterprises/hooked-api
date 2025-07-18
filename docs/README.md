@@ -43,7 +43,7 @@ To use it:
 
 ```javascript
 // Add scopes (one per table)
-api.addScope('books',
+await api.addScope('books',
   {
     schema: {
       title: 'string',
@@ -59,7 +59,7 @@ api.addScope('books',
   }
 )
 
-api.addScope('authors',
+await api.addScope('authors',
   {
     schema: {
       fullName: 'string',
@@ -108,7 +108,9 @@ This guide is focussed on creating exactly the example API shown above.
 
 ## First steps: declare a simple function
 
-Here's the simplest way to create an API with a single method:
+Here's the simplest way to create an API with a single method.
+
+> **Note**: Starting from version 2.0.0, the `customize()`, `addScope()`, and `use()` methods are async and must be awaited. This ensures that event handlers can perform critical setup work before the API is ready to use.
 
 ```javascript
 import { Api } from 'hooked-api';
@@ -187,6 +189,36 @@ const user = await api.getAuthor({ id: 100 });
 
 As you can see, you can create variables (`vars`) and helpers (`helpers`) when you create the API, and you are able to
 use those in the functions defined in `apiMethods`.
+
+### Direct Access to Variables and Helpers
+
+Besides accessing vars and helpers within method handlers, you can also access them directly:
+
+```javascript
+// Direct access to global vars and helpers
+api.vars.timeout = 15000;
+const date = api.helpers.makeDate();
+
+// Direct access to scope-specific vars and helpers
+api.scopes.users.vars.cacheTimeout = 10000;
+const validated = api.scopes.users.helpers.validateUser(userData);
+
+// Important: Scope vars/helpers automatically fall back to global ones
+// If 'timeout' is not defined in the users scope, it will return the global value
+const timeout = api.scopes.users.vars.timeout; // Returns 15000 (from global)
+
+// But if the scope defines its own value, that takes precedence
+await api.addScope('products', {}, {
+  vars: { timeout: 30000 } // Override for this scope
+});
+api.scopes.products.vars.timeout; // Returns 30000 (scope-specific)
+api.vars.timeout; // Still returns 15000 (global unchanged)
+```
+
+This direct access is useful for:
+- Checking or modifying vars outside of method handlers
+- Debugging and inspection
+- Plugin initialization code
 
 ## More API features: hooks
 
@@ -292,7 +324,7 @@ Since we defined `scopeMethods` instead of `apiMethods`, those methods will only
 To define a scope:
 
 ```javascript
-api.addScope('books',
+await api.addScope('books',
   {
     schema: {
       title: 'string',
@@ -308,7 +340,7 @@ api.addScope('books',
   }
 )
 
-api.addScope('authors',
+await api.addScope('authors',
   {
     schema: {
       fullName: 'string',
@@ -617,8 +649,14 @@ class DbApi extends Api {
     // This will add the API to the registry
     super(apiOptions);
 
+    // Note: Plugins should be added after construction
+    // since use() is now async
+  }
+  
+  async initialize() {
     // Use the core plugin by default
-    this.use(DatabasePlugin)
+    await this.use(DatabasePlugin);
+    return this;
   }
 }
 
@@ -637,15 +675,15 @@ const api = new DbApi({
   version: '1.0.0'
 })
 
-// NO NEED to do this, since DbApi already comes with it
-// await api.use(DatabasePlugin)
+// Initialize the API with its default plugins
+await api.initialize();
 
 // You can add "GeneratedOnPlugin" if you like
 await api.use(GeneratedOnPlugin)
 
 // Then add books as you wish
-// api.addScope('books', ...)
-// api.addScope('authors', ...)
+// await api.addScope('books', ...)
+// await api.addScope('authors', ...)
 ```
 
 ## Hook Placement Options
@@ -677,15 +715,22 @@ import { Api } from './index.js';
 class DbApi extends Api {
   constructor(apiOptions = {}) {
     super(apiOptions);
-
+    
+    // Note: Plugins should be added after construction
+    // since use() is now async
+  }
+  
+  async initialize() {
     // Use the core plugins
-    this.use(DatabasePlugin);
-    this.use(WriteMessagePlugin);  // WriteMessage added to base API
+    await this.use(DatabasePlugin);
+    await this.use(WriteMessagePlugin);  // WriteMessage added to base API
+    return this;
   }
 }
 
 // Usage
 const api = new DbApi({ name: 'library-api', version: '1.0.0' });
+await api.initialize();  // Initialize with base plugins
 await api.use(GeneratedOnPlugin);  // User adds this plugin
 
 // Even though WriteMessagePlugin was installed BEFORE GeneratedOnPlugin,
@@ -1071,8 +1116,8 @@ The library actively prevents prototype pollution attacks by blocking access to 
 const DANGEROUS_PROPS = ['__proto__', 'constructor', 'prototype'];
 
 // Attempting to use these will throw an error
-api.addScope('__proto__', {});  // Throws ValidationError
-api.customize({
+await api.addScope('__proto__', {});  // Throws ValidationError
+await api.customize({
   apiMethods: {
     constructor: async () => {}  // Throws ValidationError
   }
@@ -1085,14 +1130,14 @@ All method and scope names must be valid JavaScript identifiers to prevent injec
 
 ```javascript
 // Valid names (matching /^[a-zA-Z_$][a-zA-Z0-9_$]*$/)
-api.addScope('users', {});         // ✓ Valid
-api.addScope('_private', {});      // ✓ Valid
-api.addScope('$special', {});      // ✓ Valid
+await api.addScope('users', {});         // ✓ Valid
+await api.addScope('_private', {});      // ✓ Valid
+await api.addScope('$special', {});      // ✓ Valid
 
 // Invalid names throw ValidationError with helpful messages
-api.addScope('user-list', {});     // ✗ Invalid: contains '-'
-api.addScope('123users', {});      // ✗ Invalid: starts with number
-api.addScope('user.list', {});     // ✗ Invalid: contains '.'
+await api.addScope('user-list', {});     // ✗ Invalid: contains '-'
+await api.addScope('123users', {});      // ✗ Invalid: starts with number
+await api.addScope('user.list', {});     // ✗ Invalid: contains '.'
 ```
 
 When validation fails, the library provides detailed error messages:
@@ -1134,12 +1179,12 @@ new Api({ name: 'my-api', version: '1.0.0' });
 new Api({ name: 'my-api', version: '1.0.0' }); // Throws ConfigurationError
 
 // Duplicate scope names
-api.addScope('users', {});
-api.addScope('users', {});  // Throws ScopeError
+await api.addScope('users', {});
+await api.addScope('users', {});  // Throws ScopeError
 
 // Duplicate plugin names
-api.use(MyPlugin);
-api.use(MyPlugin);  // Throws PluginError
+await api.use(MyPlugin);
+await api.use(MyPlugin);  // Throws PluginError
 ```
 
 ### Frozen Options
@@ -1147,7 +1192,7 @@ api.use(MyPlugin);  // Throws PluginError
 All options objects are frozen when passed to handlers, preventing accidental or malicious modifications:
 
 ```javascript
-api.customize({
+await api.customize({
   apiMethods: {
     test: async ({ params, options }) => {
       // options is frozen - modifications will fail
@@ -1300,7 +1345,9 @@ When building APIs with hooked-api, follow these security best practices:
 
 ## Event System
 
-In addition to hooks (which intercept and modify behavior of methors), Hooked API provides an event system for lifecycle notifications  to the API itself. Events are simpler than hooks - they notify about system changes but cannot modify behavior or stop execution.
+In addition to hooks (which intercept and modify behavior of methods), Hooked API provides an event system for lifecycle notifications to the API itself. Events are simpler than hooks - they notify about system changes but cannot modify behavior or stop execution.
+
+> **Important**: Events are now properly awaited during API setup. When you call `await api.addScope()`, the method will wait for all `scope:added` event handlers to complete before returning. This ensures that critical setup work (like schema initialization) is completed before the scope is usable.
 
 ### Events vs Hooks
 
@@ -1314,81 +1361,13 @@ In addition to hooks (which intercept and modify behavior of methors), Hooked AP
 
 ### Available Events
 
-The following system events are emitted:
+The following system hooks  are emitted:
 
 - `scope:added` - When a new scope is added to the API
 - `method:api:added` - When a new API method is added
+- `method:scope:adding` - When a scope method is about to be added (fires before `method:scope:added`)
 - `method:scope:added` - When a new scope method is added
 - `plugin:installed` - When a plugin is successfully installed
-
-### Using Events in Plugins
-
-Plugins can register event listeners using the `on` method:
-
-```javascript
-const LoggingPlugin = {
-  name: 'logging-plugin',
-  
-  install({ on, log }) {
-    // Listen for scope creation
-    on('scope:added', 'logNewScope', ({ eventData }) => {
-      log.info(`New scope created: ${eventData.scopeName}`);
-    });
-    
-    // Listen for plugin installations
-    on('plugin:installed', 'logPlugin', ({ eventData }) => {
-      log.info(`Plugin installed: ${eventData.pluginName}`);
-    });
-  }
-};
-```
-
-### Event Handler Context
-
-Event handlers receive a context object with:
-
-```javascript
-{
-  eventName: 'scope:added',        // The event that was triggered
-  eventData: {                     // Event-specific data
-    scopeName: 'users',
-    scopeOptions: { ... },
-    // ... other event-specific fields
-  },
-  api: {                          // API access
-    vars: { ... },                // API variables (proxy)
-    helpers: { ... },             // API helpers (proxy)
-    scopes: { ... },              // All scopes
-    options: { ... },             // API options (frozen)
-    pluginOptions: { ... }        // Plugin options (frozen)
-  },
-  log: { ... }                    // Logger for this event context
-}
-```
-
-### Practical Event Examples
-
-#### Auto-Configuration Plugin
-
-Automatically configure new scopes as they're added:
-
-```javascript
-const AutoConfigPlugin = {
-  name: 'auto-config',
-  
-  install({ on, addHook }) {
-    on('scope:added', 'configureScope', ({ eventData, api }) => {
-      const { scopeName } = eventData;
-      
-      // Add scope-specific configuration
-      api.vars[`${scopeName}CacheTimeout`] = 5000;
-      
-      // Log the configuration
-      console.log(`Auto-configured scope: ${scopeName}`);
-    });
-  }
-};
-```
 
 #### Cross-Plugin Communication
 
@@ -1442,7 +1421,7 @@ const MonitoringPlugin = {
 
 ### Error Handling
 
-Event handler errors are isolated and logged but don't break execution:
+Event handler errors are logged and re-thrown. This ensures that critical setup errors don't go unnoticed during API initialization:
 
 ```javascript
 const SafePlugin = {
@@ -1458,17 +1437,21 @@ const SafePlugin = {
   }
 };
 
-// Usage - the error doesn't stop scope creation
-api.use(SafePlugin);
-api.addScope('special');  // Error is logged, but scope is still created
-api.addScope('normal');   // Processes normally
+// Usage - the error will now propagate
+await api.use(SafePlugin);
+try {
+  await api.addScope('special');  // Error is thrown and must be handled
+} catch (error) {
+  console.error('Failed to add scope:', error);
+}
+await api.addScope('normal');   // Only runs if previous error was caught
 ```
 
 ### Best Practices
 
 1. **Use events for notifications, not control flow** - Events cannot stop or modify operations
 2. **Keep event handlers lightweight** - They run synchronously and can impact performance
-3. **Handle errors gracefully** - Event errors are logged but isolated
+3. **Handle errors gracefully** - Event errors are logged and re-thrown, so ensure your event handlers don't throw unless it's critical
 4. **Don't modify critical state** - Use hooks for state modifications that affect behavior
 5. **Consider event ordering** - Listeners execute in registration order
 
@@ -1587,6 +1570,3 @@ beforeEach(() => {
   resetGlobalRegistryForTesting();
 });
 ```
-
-
-

@@ -273,6 +273,71 @@ if _all_ hooks ran, and `false` if the running chain was interrupted.
 
 A hook can interrupt the running chain by returning `false`.
 
+### Advanced Hook Definition: Object Format
+
+While the examples above show hooks as simple functions, you can also define hooks using an object format that provides more control over the hook's metadata and placement:
+
+```javascript
+api.customize({
+  hooks: {
+    // Simple function format (what we've seen so far)
+    simpleHook: ({ context }) => {
+      console.log('Simple hook');
+    },
+    
+    // Object format with full control
+    advancedHook: {
+      handler: async ({ context, params }) => {
+        console.log('Advanced hook with custom name');
+      },
+      functionName: 'myCustomHookName',  // Optional: custom name for debugging
+      beforePlugin: 'SomeOtherPlugin'     // Optional: placement option
+    }
+  }
+});
+```
+
+The object format accepts these properties:
+- `handler` (required): The function to execute
+- `functionName` (optional): A custom name for the hook function, useful for debugging and placement references
+- Any hook placement options (optional): `beforePlugin`, `afterPlugin`, `beforeFunction`, `afterFunction`
+
+This same object format works in `addScope`:
+
+```javascript
+api.addScope('users', {}, {
+  hooks: {
+    beforeSave: {
+      handler: async ({ context, helpers }) => {
+        // Validate email format
+        if (!helpers.validateEmail(context.record.email)) {
+          throw new Error('Invalid email format');
+        }
+      },
+      functionName: 'validateUserEmail',
+      beforeFunction: 'sanitizeData'  // Run before another hook
+    },
+    
+    afterSave: {
+      handler: ({ context, vars }) => {
+        // Send notification
+        vars.eventBus.emit('user:saved', context.record);
+      },
+      functionName: 'notifyUserSaved',
+      afterPlugin: 'DatabasePlugin'  // Run after all DatabasePlugin hooks
+    }
+  }
+});
+```
+
+This object format is particularly useful when:
+1. You need to specify hook placement options
+2. You want to give your hooks meaningful names for debugging
+3. You're building complex hook chains that reference each other
+4. You need to ensure your hooks run in a specific order relative to other hooks
+
+Note: When using `customize()` or `addScope()`, the hooks are automatically associated with a special plugin name (`api-custom:${apiName}` or `scope-custom:${scopeName}`), which allows them to be referenced by placement options.
+
 ## Scopes: Organizing Different Types of Data
 
 In many cases it's crucial to have `scopes`; in this case, we will map a scope to a database table.
@@ -574,11 +639,10 @@ export const HttpServerPlugin = {
         };
         
         // Run hooks - other plugins can intercept or modify the request
-        const shouldContinue = await runHooks('http:request', context, {
-          url: req.url,
-          method: req.method,
-          headers: req.headers
-        });
+        context.url = req.url;
+        context.method = req.method;
+        context.headers = req.headers;
+        const shouldContinue = await runHooks('http:request', context);
         
         // Check if a hook handled the request
         if (!shouldContinue || context.handled) {
@@ -598,8 +662,8 @@ export const AuthPlugin = {
   name: 'AuthPlugin',
   
   install: ({ addHook }) => {
-    addHook('http:request', 'authenticate', {}, async ({ context, methodParams }) => {
-      const { url, headers } = methodParams;
+    addHook('http:request', 'authenticate', {}, async ({ context }) => {
+      const { url, headers } = context;
       
       // Intercept auth endpoints
       if (url.startsWith('/auth/')) {

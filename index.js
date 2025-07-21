@@ -544,7 +544,7 @@ export class Api {
                   scopes: scopeContext.scopes,             // All scopes proxy
                   
                   // Capabilities
-                  runHooks: (name) => scopeContext.runHooks(name, context, params),  // Hook execution
+                  runHooks: (name) => scopeContext.runHooks(name, context),  // Hook execution
                   log: scopeContext.log,                   // Logging function
                   
                   // Metadata
@@ -662,7 +662,7 @@ export class Api {
               scopes: target.scopes,  // All scopes proxy
               
               // Capabilities
-              runHooks: (name) => target._runHooks(name, context, params, null),
+              runHooks: (name) => target._runHooks(name, context, null),
               log,
               
               // Metadata
@@ -1277,7 +1277,7 @@ export class Api {
       vars: scopeConfig._varsProxy,      // Use pre-built proxy
       helpers: scopeConfig._helpersProxy, // Use pre-built proxy
       scopes: this.scopes,
-      runHooks: (name, context, params) => this._runHooks(name, context, params, scopeName),
+      runHooks: (name, context) => this._runHooks(name, context, scopeName),
       log,
       apiOptions: Object.freeze({ ...this._apiOptions }),
       pluginOptions: Object.freeze({ ...this._pluginOptions }),
@@ -1329,7 +1329,7 @@ export class Api {
    * - Performance tracking: Logs timing for each handler
    * - Context sharing: All hooks receive the same context object
    */
-  async _runHooks(name, context, params = {}, scopeName = null) {
+  async _runHooks(name, context, scopeName = null) {
     const handlers = this._hooks.get(name) || []
     if (handlers.length === 0) {
       this._logger.trace(`No handlers for hook '${name}'${scopeName ? ` in scope '${scopeName}'` : ''}`);
@@ -1357,7 +1357,6 @@ export class Api {
          */
         const handlerParams = { 
           // User data
-          methodParams: params,
           context,
           
           // Data access
@@ -2236,9 +2235,9 @@ async _addScope(name, options = {}, extras = {}) {
          * Run hooks from plugin context
          * Allows plugins to create their own hookable operations
          */
-        runHooks: (hookName, context = {}, params = {}) => {
+        runHooks: (hookName, context = {}) => {
           api._logger.trace(`Plugin '${plugin.name}' running hooks for '${hookName}'`);
-          return api._runHooks(hookName, context, params, null); // Explicitly pass null for scopeName
+          return api._runHooks(hookName, context, null); // Pass context and scopeName
         },
         
         /**
@@ -2258,7 +2257,7 @@ async _addScope(name, options = {}, extras = {}) {
          */
         name: plugin.name,
         apiOptions: Object.freeze({ ...this._apiOptions }),
-        pluginOptions: Object.freeze({ ...this._pluginOptions }),
+        pluginOptions: Object.freeze(options),
         context: {}, // Mutable context for plugin's internal use
         
         // Pass the API instance so plugins can create namespaces
@@ -2312,24 +2311,19 @@ async _addScope(name, options = {}, extras = {}) {
    * a hook chain for a custom event or operation.
    *
    * @param {string} hookName - The name of the hook to run (e.g., 'beforeShutdown', 'dataImported').
-   * @param {object} mutableContextObject - A mutable object passed to all hook handlers.
+   * @param {object} contextObject - A mutable object passed to all hook handlers.
    * Handlers can read from and modify this object to share state or influence subsequent hooks.
-   * @param {object} [immutableParamsObject={}] - An optional object containing immutable parameters
-   * or metadata related to the hook execution. Handlers can read this, but should not modify it.
    * @returns {Promise<boolean>} True if all hooks completed successfully, false if a hook stopped the chain.
    * @throws {Error} If any hook handler throws an error, it will propagate.
    */
-  async runHooks(hookName, mutableContextObject, immutableParamsObject = {}) {
+  async runHooks(hookName, contextObject) {
     if (typeof hookName !== 'string' || hookName.trim() === '') {
         throw new ValidationError('Hook name must be a non-empty string.', { field: 'hookName', value: hookName, validValues: 'non-empty string' });
     }
-    // Note: mutableContextObject could be any type of object, but for typical hook contexts,
-    // it's expected to be a non-null object. You might make this more flexible if
-    // your hooks genuinely accept primitives or null as context for some cases.
-    if (typeof mutableContextObject !== 'object' || mutableContextObject === null) {
-        throw new ValidationError('Mutable context object must be a non-null object.', { field: 'mutableContextObject', value: mutableContextObject, validValues: 'object' });
+    if (typeof contextObject !== 'object' || contextObject === null) {
+        throw new ValidationError('Context object must be a non-null object.', { field: 'contextObject', value: contextObject, validValues: 'object' });
     }
-    return this._runHooks(hookName, mutableContextObject, immutableParamsObject, null);
+    return this._runHooks(hookName, contextObject, null);
   }
 
 }

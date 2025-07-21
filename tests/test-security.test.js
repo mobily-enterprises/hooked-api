@@ -912,23 +912,25 @@ test('Authorization and access patterns', async (t) => {
 
     api.customize({
       hooks: {
-        '*': ({ methodParams, name, scopeName }) => {
+        '*': ({ context, name, scopeName }) => {
           auditLog.push({
             timestamp: Date.now(),
             method: name,
             scope: scopeName,
-            params: JSON.stringify(methodParams)
+            operation: context.operation || 'unknown'
           });
         }
       },
       apiMethods: {
-        sensitiveOperation: async ({ params, runHooks }) => {
+        sensitiveOperation: async ({ params, context, runHooks }) => {
+          context.operation = `sensitive:${params.data}`;
           await runHooks('*');
           return `Processed ${params.data}`;
         }
       },
       scopeMethods: {
-        delete: async ({ params, scopeName, runHooks }) => {
+        delete: async ({ params, scopeName, context, runHooks }) => {
+          context.operation = `delete:${params.id}`;
           await runHooks('*');
           return `Deleted ${params.id} from ${scopeName}`;
         }
@@ -943,8 +945,8 @@ test('Authorization and access patterns', async (t) => {
 
     // Check audit log
     assert.equal(auditLog.length, 2);
-    assert.ok(auditLog[0].params.includes('secret'));
-    assert.ok(auditLog[1].params.includes('123'));
+    assert.ok(auditLog[0].operation.includes('secret'));
+    assert.ok(auditLog[1].operation.includes('123'));
     assert.equal(auditLog[1].scope, 'users');
   });
 });

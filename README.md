@@ -631,11 +631,10 @@ export const HttpServerPlugin = {
         };
         
         // Run hooks - other plugins can intercept or modify the request
-        const shouldContinue = await runHooks('http:request', context, {
-          url: req.url,
-          method: req.method,
-          headers: req.headers
-        });
+        context.url = req.url;
+        context.method = req.method;
+        context.headers = req.headers;
+        const shouldContinue = await runHooks('http:request', context);
         
         // Check if a hook handled the request
         if (!shouldContinue || context.handled) {
@@ -655,8 +654,8 @@ export const AuthPlugin = {
   name: 'AuthPlugin',
   
   install: ({ addHook }) => {
-    addHook('http:request', 'authenticate', {}, async ({ context, methodParams }) => {
-      const { url, headers } = methodParams;
+    addHook('http:request', 'authenticate', {}, async ({ context }) => {
+      const { url, headers } = context;
       
       // Intercept auth endpoints
       if (url.startsWith('/auth/')) {

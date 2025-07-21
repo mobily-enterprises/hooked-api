@@ -113,8 +113,8 @@ test('Hook System', async (t) => {
 
     await api.test({ input: 'value' });
     
-    // Check hook receives methodParams instead of params
-    assert.ok(hookParams.includes('methodParams'));
+    // Check hook no longer receives methodParams or params
+    assert.ok(!hookParams.includes('methodParams'));
     assert.ok(!hookParams.includes('params'));
     assert.ok(hookParams.includes('context'));
   });

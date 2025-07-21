@@ -185,11 +185,10 @@ const HttpPlugin = {
         };
         
         // Run hooks for HTTP request processing
-        const shouldContinue = await runHooks('http:request', context, {
-          url: req.url,
-          method: req.method,
-          headers: req.headers
-        });
+        context.url = req.url;
+        context.method = req.method;
+        context.headers = req.headers;
+        const shouldContinue = await runHooks('http:request', context);
         
         // Check if a hook handled the request
         if (!shouldContinue || context.handled) {
@@ -208,11 +207,11 @@ const HttpPlugin = {
 const AuthPlugin = {
   name: 'auth',
   install({ addHook }) {
-    addHook('http:request', 'authenticate', {}, async ({ context, methodParams }) => {
-      const { headers } = methodParams;
+    addHook('http:request', 'authenticate', {}, async ({ context }) => {
+      const { headers, url } = context;
       
       // Handle auth endpoints
-      if (methodParams.url.startsWith('/api/auth/')) {
+      if (url.startsWith('/api/auth/')) {
         // Process authentication
         context.res.end(JSON.stringify({ token: 'new-token' }));
         context.handled = true;
@@ -264,7 +263,7 @@ install: ({
   addHook,            // Special function that auto-injects plugin name:
                       // addHook(hookName, functionName, hookOptions, handler)
   runHooks,           // Run hooks from plugin context:
-                      // runHooks(hookName, context, params)
+                      // runHooks(hookName, context)
   
   // Event management
   on,                 // Register event listeners:
@@ -309,10 +308,9 @@ install: ({
     const requestContext = { req, res, handled: false };
     
     // Run hooks for this plugin operation
-    const shouldContinue = await runHooks('http:request', requestContext, {
-      url: req.url,
-      method: req.method
-    });
+    requestContext.url = req.url;
+    requestContext.method = req.method;
+    const shouldContinue = await runHooks('http:request', requestContext);
     
     if (!shouldContinue || requestContext.handled) {
       return; // Request was intercepted by a hook

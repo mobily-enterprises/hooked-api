@@ -212,10 +212,9 @@ const httpPlugin = {
       const context = { req, res, handled: false };
       
       // Run hooks for this operation
-      const shouldContinue = await runHooks('http:request', context, {
-        url: req.url,
-        method: req.method
-      });
+      context.url = req.url;
+      context.method = req.method;
+      const shouldContinue = await runHooks('http:request', context);
       
       if (!shouldContinue || context.handled) return;
       
@@ -228,8 +227,8 @@ const httpPlugin = {
 const authPlugin = {
   name: 'authPlugin',
   install: ({ addHook }) => {
-    addHook('http:request', 'auth', {}, async ({ context, methodParams }) => {
-      if (methodParams.url === '/login') {
+    addHook('http:request', 'auth', {}, async ({ context }) => {
+      if (context.url === '/login') {
         context.res.end('Login page');
         context.handled = true;
         return false;

@@ -150,6 +150,56 @@ export class ConfigurationError extends HookedApiError {
 }
 
 /**
+ * Thrown when a plugin requires npm packages that aren't installed
+ * 
+ * Provides actionable error messages with install commands for both npm and yarn.
+ * Can include context about which plugin method or feature requires the dependency.
+ * 
+ * Example error message:
+ * ```
+ * ExpressPlugin requires additional dependencies.
+ * 
+ * Please install:
+ *   npm install express
+ * 
+ * Or with yarn:
+ *   yarn add express
+ * 
+ * Express framework for creating HTTP endpoints
+ * ```
+ */
+export class PluginDependencyError extends HookedApiError {
+  constructor(pluginName, packages, description = '', context = {}) {
+    const packageList = Array.isArray(packages) ? packages : [packages];
+    const npmInstall = `npm install ${packageList.join(' ')}`;
+    const yarnAdd = `yarn add ${packageList.join(' ')}`;
+    
+    let message = `${pluginName} plugin requires additional dependencies.\n\n`;
+    message += `Please install:\n`;
+    message += `  ${npmInstall}\n\n`;
+    message += `Or with yarn:\n`;
+    message += `  ${yarnAdd}\n`;
+    
+    if (description) {
+      message += `\n${description}\n`;
+    }
+    
+    if (context.method) {
+      message += `\nRequired by: ${pluginName}.${context.method}()`;
+    }
+    
+    if (context.feature) {
+      message += `\nNeeded for: ${context.feature}`;
+    }
+
+    super(message, 'PLUGIN_DEPENDENCY_ERROR');
+    this.pluginName = pluginName;
+    this.packages = packageList;
+    this.context = context;
+  }
+}
+
+/**
  * Thrown when input validation fails
  * 
  * Used throughout the system to validate:
@@ -2264,6 +2314,7 @@ async _addScope(name, options = {}, extras = {}) {
         api: this
       };
       
+      
       /**
        * Execute the plugin's install function
        * This is where the plugin sets up all its functionality
@@ -2344,4 +2395,27 @@ async _addScope(name, options = {}, extras = {}) {
  */
 export const resetGlobalRegistryForTesting = () => {
   globalRegistry = new Map()
+}
+
+/**
+ * Helper function for plugins to throw consistent dependency errors
+ * 
+ * @param {string} packageName - The npm package that's missing
+ * @param {string} pluginName - The plugin that requires it
+ * @param {string} [description] - Optional description of what the package is used for
+ * @returns {never} Always throws PluginDependencyError
+ * 
+ * @example
+ * try {
+ *   const express = await import('express');
+ * } catch (e) {
+ *   throw requirePackage('express', 'Express');
+ * }
+ */
+export function requirePackage(packageName, pluginName, description = '') {
+  throw new PluginDependencyError(
+    pluginName,
+    packageName,
+    description || `Required for ${pluginName} plugin to function`
+  );
 }

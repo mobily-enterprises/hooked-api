@@ -602,7 +602,9 @@ export class Api {
                   apiOptions: scopeContext.apiOptions,     // Frozen API configuration
                   pluginOptions: scopeContext.pluginOptions, // Mutable plugin options
                   scopeOptions: scopeContext.scopeOptions, // Scope-specific options
-                  scopeName: scopeName                     // Current scope name
+                  scopeName: scopeName,                     // Current scope name
+
+                  api: this,
                 };
                 
                 /**
@@ -718,7 +720,9 @@ export class Api {
               // Metadata
               name: prop,
               apiOptions: Object.freeze({ ...target._apiOptions }),
-              pluginOptions: Object.freeze({ ...target._pluginOptions })
+              pluginOptions: Object.freeze({ ...target._pluginOptions }),
+
+              api: this
               // No scopeName or scopeOptions for global methods
             };
             
@@ -1424,7 +1428,9 @@ export class Api {
           apiOptions: handlerContext.apiOptions,
           pluginOptions: handlerContext.pluginOptions,
           scopeOptions: handlerContext.scopeOptions,
-          scopeName
+          scopeName,
+
+          api: this
         };
         
         // Add alias if one is set
@@ -1836,12 +1842,11 @@ async _addScope(name, options = {}, extras = {}) {
     }
 
     // Extract extras at the beginning of the logic block
-    const { hooks = {}, apiMethods = {}, scopeMethods = {}, vars = {}, helpers = {} } = extras;
+    const { hooks = {}, scopeMethods = {}, vars = {}, helpers = {} } = extras;
 
     // Log what's being added
     const additions = [];
     if (Object.keys(hooks).length > 0) additions.push(`${Object.keys(hooks).length} hooks`);
-    if (Object.keys(apiMethods).length > 0) additions.push(`${Object.keys(apiMethods).length} api methods`);
     if (Object.keys(scopeMethods).length > 0) additions.push(`${Object.keys(scopeMethods).length} scope methods`);
     if (Object.keys(vars).length > 0) additions.push(`${Object.keys(vars).length} vars`);
     if (Object.keys(helpers).length > 0) additions.push(`${Object.keys(helpers).length} helpers`);
@@ -1856,7 +1861,6 @@ async _addScope(name, options = {}, extras = {}) {
      */
     const scopeConfig = {
       options: { ...options }, // User-provided options (will be frozen after hooks)
-      _apiMethods: new Map(Object.entries(apiMethods)),
       _scopeMethods: new Map(Object.entries(scopeMethods)),
       _vars: new Map(Object.entries(vars)),
       _helpers: new Map(Object.entries(helpers))

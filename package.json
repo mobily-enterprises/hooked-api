@@ -16,11 +16,5 @@
   },
   "author": "",
   "license": "ISC",
-  "description": "",
-  "dependencies": {
-    "semver": "^7.7.2"
-  },
-  "devDependencies": {
-    "semver": "^7.7.2"
-  }
+  "description": ""
 }

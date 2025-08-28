@@ -3,8 +3,7 @@ import { RestApiPlugin, MemoryStoragePlugin } from '../rest-api-plugin.js';
 
 // Create the API instance
 const api = new Api({
-  name: 'my-app',
-  version: '1.0.0'
+  name: 'my-app'
 });
 
 // Install the REST API plugin

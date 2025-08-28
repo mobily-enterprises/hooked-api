@@ -24,8 +24,7 @@ Quick recipes for common tasks with Hooked API.
 import { Api } from 'hooked-api';
 
 const api = new Api({
-  name: 'my-api',
-  version: '1.0.0'
+  name: 'my-api'
 });
 ```
 
@@ -33,7 +32,6 @@ const api = new Api({
 ```javascript
 const api = new Api({
   name: 'my-api',
-  version: '1.0.0',
   logging: { level: 'debug' }
 });
 ```
@@ -319,7 +317,6 @@ const customLogger = {
 
 const api = new Api({
   name: 'my-api',
-  version: '1.0.0',
   logging: { logger: customLogger }
 });
 ```
@@ -352,19 +349,11 @@ try {
 
 ## Testing
 
-### Reset registry between tests
-```javascript
-import { resetGlobalRegistryForTesting } from 'hooked-api';
-
-beforeEach(() => {
-  resetGlobalRegistryForTesting();
-});
-```
 
 ### Test a plugin
 ```javascript
 test('plugin adds method', async () => {
-  const api = new Api({ name: 'test', version: '1.0.0' });
+  const api = new Api({ name: 'test' });
   
   await api.use({
     name: 'testPlugin',

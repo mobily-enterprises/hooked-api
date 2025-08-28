@@ -1,16 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { Api, resetGlobalRegistryForTesting, ValidationError } from '../index.js';
+import { Api, ValidationError } from '../index.js';
 
-// Reset registry before each test to avoid conflicts
-test.beforeEach(() => {
-  resetGlobalRegistryForTesting();
-});
 
 test('Hook System', async (t) => {
   await t.test('should run hooks in order', async () => {
     const order = [];
-    const api = new Api({ name: 'test', version: '1.0.0' });
+    const api = new Api({ name: 'test' });
     await api.customize({
       apiMethods: {
         test: async ({ runHooks }) => {
@@ -38,7 +34,7 @@ test('Hook System', async (t) => {
 
   await t.test('should stop hook chain when returning false', async () => {
     const order = [];
-    const api = new Api({ name: 'test', version: '1.0.0' });
+    const api = new Api({ name: 'test' });
     await api.customize({
       apiMethods: {
         test: async ({ runHooks }) => {
@@ -72,7 +68,7 @@ test('Hook System', async (t) => {
   });
 
   await t.test('should return false from runHooks when chain is stopped', async () => {
-    const api = new Api({ name: 'test', version: '1.0.0' });
+    const api = new Api({ name: 'test' });
     let hookResult;
     await api.customize({
       apiMethods: {
@@ -95,7 +91,7 @@ test('Hook System', async (t) => {
 
   await t.test('should provide correct parameters to hooks', async () => {
     let hookParams;
-    const api = new Api({ name: 'test', version: '1.0.0' });
+    const api = new Api({ name: 'test' });
     await api.customize({
       apiMethods: {
         test: async ({ params, context, runHooks }) => {
@@ -121,7 +117,7 @@ test('Hook System', async (t) => {
 
   await t.test('should handle hook placement options', async () => {
     const order = [];
-    const api = new Api({ name: 'test', version: '1.0.0' });
+    const api = new Api({ name: 'test' });
 
     // Install plugins
     await api.use({
@@ -154,7 +150,7 @@ test('Hook System', async (t) => {
 
   await t.test('should handle scope-specific hooks', async () => {
     const calls = [];
-    const api = new Api({ name: 'test', version: '1.0.0' });
+    const api = new Api({ name: 'test' });
     await api.customize({
       scopeMethods: {
         test: async ({ scopeName, runHooks }) => {
@@ -186,7 +182,7 @@ test('Hook System', async (t) => {
   });
 
   await t.test('should validate hook configuration', async () => {
-    const api = new Api({ name: 'test', version: '1.0.0' });
+    const api = new Api({ name: 'test' });
     
     // Invalid handler type
     await assert.rejects(
@@ -210,7 +206,7 @@ test('Hook System', async (t) => {
   });
 
   await t.test('should handle hook errors properly', async () => {
-    const api = new Api({ name: 'test', version: '1.0.0' });
+    const api = new Api({ name: 'test' });
     await api.customize({
       apiMethods: {
         test: async ({ runHooks }) => {
@@ -231,7 +227,7 @@ test('Hook System', async (t) => {
   });
 
   await t.test('should handle empty hook chains', async () => {
-    const api = new Api({ name: 'test', version: '1.0.0' });
+    const api = new Api({ name: 'test' });
     await api.customize({
       apiMethods: {
         test: async ({ context, runHooks }) => {
@@ -247,7 +243,7 @@ test('Hook System', async (t) => {
 
   await t.test('should stop hook chain in scope methods', async () => {
     const calls = [];
-    const api = new Api({ name: 'test', version: '1.0.0' });
+    const api = new Api({ name: 'test' });
     
     await api.customize({
       scopeMethods: {
@@ -275,7 +271,7 @@ test('Hook System', async (t) => {
 
   await t.test('should handle multiple hooks added separately', async () => {
     const calls = [];
-    const api = new Api({ name: 'test', version: '1.0.0' });
+    const api = new Api({ name: 'test' });
     
     await api.customize({
       apiMethods: {
@@ -311,7 +307,7 @@ test('Hook System', async (t) => {
 
   await t.test('should stop chain with separate hook registrations', async () => {
     const calls = [];
-    const api = new Api({ name: 'test', version: '1.0.0' });
+    const api = new Api({ name: 'test' });
     
     await api.customize({
       apiMethods: {
@@ -348,7 +344,7 @@ test('Hook System', async (t) => {
 
   await t.test('should handle async hooks that return false', async () => {
     const calls = [];
-    const api = new Api({ name: 'test', version: '1.0.0' });
+    const api = new Api({ name: 'test' });
     
     await api.customize({
       apiMethods: {

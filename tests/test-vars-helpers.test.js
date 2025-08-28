@@ -1,15 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { Api, resetGlobalRegistryForTesting } from '../index.js';
+import { Api } from '../index.js';
 
-// Reset registry before each test to avoid conflicts
-test.beforeEach(() => {
-  resetGlobalRegistryForTesting();
-});
 
 test('Vars and Helpers', async (t) => {
   await t.test('should access vars and helpers in methods', async () => {
-    const api = new Api({ name: 'test', version: '1.0.0' });
+    const api = new Api({ name: 'test' });
     api.customize({
       vars: {
         testVar: 'test-value'
@@ -32,7 +28,7 @@ test('Vars and Helpers', async (t) => {
   });
 
   await t.test('should allow modifying vars', async () => {
-    const api = new Api({ name: 'test', version: '1.0.0' });
+    const api = new Api({ name: 'test' });
     api.customize({
       vars: { counter: 0 },
       apiMethods: {
@@ -50,7 +46,7 @@ test('Vars and Helpers', async (t) => {
   });
 
   await t.test('should protect against prototype pollution in vars', async () => {
-    const api = new Api({ name: 'test', version: '1.0.0' });
+    const api = new Api({ name: 'test' });
     api.customize({
       apiMethods: {
         tryPollution: async ({ vars }) => {
@@ -75,7 +71,7 @@ test('Vars and Helpers', async (t) => {
   });
 
   await t.test('should share vars between methods', async () => {
-    const api = new Api({ name: 'test', version: '1.0.0' });
+    const api = new Api({ name: 'test' });
     api.customize({
       vars: { shared: 'initial' },
       apiMethods: {
@@ -92,7 +88,7 @@ test('Vars and Helpers', async (t) => {
   });
 
   await t.test('should allow plugins to set vars and helpers', async () => {
-    const api = new Api({ name: 'test', version: '1.0.0' });
+    const api = new Api({ name: 'test' });
 
     const plugin = {
       name: 'vars-plugin',

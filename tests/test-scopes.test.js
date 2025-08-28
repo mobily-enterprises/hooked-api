@@ -1,15 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { Api, resetGlobalRegistryForTesting, ValidationError, ScopeError, MethodError } from '../index.js';
+import { Api, ValidationError, ScopeError, MethodError } from '../index.js';
 
-// Reset registry before each test to avoid conflicts
-test.beforeEach(() => {
-  resetGlobalRegistryForTesting();
-});
 
 test('Scope Methods', async (t) => {
   await t.test('should add and call scope methods', async () => {
-    const api = new Api({ name: 'test', version: '1.0.0' });
+    const api = new Api({ name: 'test' });
     await api.customize({
       scopeMethods: {
         list: async ({ scopeName }) => {
@@ -25,7 +21,7 @@ test('Scope Methods', async (t) => {
 
   await t.test('should provide all handler parameters to scope methods', async () => {
     let capturedParams;
-    const api = new Api({ name: 'test', version: '1.0.0' });
+    const api = new Api({ name: 'test' });
     await api.customize({
       scopeMethods: {
         testMethod: async (handlerParams) => {
@@ -46,7 +42,7 @@ test('Scope Methods', async (t) => {
   });
 
   await t.test('should access scope options in methods', async () => {
-    const api = new Api({ name: 'test', version: '1.0.0' });
+    const api = new Api({ name: 'test' });
     await api.customize({
       scopeMethods: {
         getSchema: async ({ scopeOptions }) => {
@@ -61,12 +57,12 @@ test('Scope Methods', async (t) => {
   });
 
   await t.test('should throw error when accessing non-existent scope', async () => {
-    const api = new Api({ name: 'test', version: '1.0.0' });
+    const api = new Api({ name: 'test' });
     assert.equal(api.scopes.nonexistent, undefined);
   });
 
   await t.test('should throw error on direct scope call', async () => {
-    const api = new Api({ name: 'test', version: '1.0.0' });
+    const api = new Api({ name: 'test' });
     await api.addScope('users', {});
     
     assert.throws(
@@ -76,7 +72,7 @@ test('Scope Methods', async (t) => {
   });
 
   await t.test('should handle scope-specific methods', async () => {
-    const api = new Api({ name: 'test', version: '1.0.0' });
+    const api = new Api({ name: 'test' });
     
     await api.addScope('users', {}, {
       scopeMethods: {
@@ -95,7 +91,7 @@ test('Scope Methods', async (t) => {
   });
 
   await t.test('should handle numeric properties correctly', async () => {
-    const api = new Api({ name: 'test', version: '1.0.0' });
+    const api = new Api({ name: 'test' });
     await api.addScope('users', {});
     
     // Numeric properties should return undefined
@@ -104,7 +100,7 @@ test('Scope Methods', async (t) => {
   });
 
   await t.test('should throw error for invalid scope name', async () => {
-    const api = new Api({ name: 'test', version: '1.0.0' });
+    const api = new Api({ name: 'test' });
     await assert.rejects(
       () => api.addScope('invalid-name', {}),
       ValidationError
@@ -112,7 +108,7 @@ test('Scope Methods', async (t) => {
   });
 
   await t.test('should throw error for duplicate scope', async () => {
-    const api = new Api({ name: 'test', version: '1.0.0' });
+    const api = new Api({ name: 'test' });
     await api.addScope('users', {});
     await assert.rejects(
       () => api.addScope('users', {}),
@@ -121,7 +117,7 @@ test('Scope Methods', async (t) => {
   });
 
   await t.test('should merge vars and helpers at scope level', async () => {
-    const api = new Api({ name: 'test', version: '1.0.0' });
+    const api = new Api({ name: 'test' });
     await api.customize({
       vars: { global: 'global-value', shared: 'global-shared' },
       helpers: { globalHelper: () => 'global' },

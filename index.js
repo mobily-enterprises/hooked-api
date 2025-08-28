@@ -12,17 +12,8 @@
  * - Plugins: Reusable modules that extend API functionality
  * - Scopes: Logical groupings of methods (e.g., api.scopes.users.create())
  * - Hooks: Intercept points in method execution for customization
- * - Registry: Global storage for API instances with version management
+ * - Registry: Global storage for API instances
  */
-
-import semver from 'semver'
-
-/**
- * Global registry stores all API instances by name
- * Enables cross-API communication and version management
- * Example: Api.registry.get('my-api') retrieves an API instance
- */
-let globalRegistry = new Map()
 
 /**
  * Validation patterns and security constants
@@ -133,7 +124,7 @@ export class HookedApiError extends Error {
  * Thrown when API configuration is invalid
  * 
  * Common scenarios:
- * - Invalid API name or version format
+ * - Invalid API name format
  * - Missing required configuration options
  * - Type mismatches in configuration objects
  * 
@@ -286,7 +277,7 @@ export class MethodError extends HookedApiError {
  * 
  * Usage:
  * ```javascript
- * const api = new Api({ name: 'my-api', version: '1.0.0' });
+ * const api = new Api({ name: 'my-api' });
  * api.customize({ ... });  // Add methods, hooks, vars
  * await api.use(plugin);   // Install plugins
  * api.addScope('users');   // Create scopes
@@ -298,15 +289,13 @@ export class Api {
    * 
    * @param {Object} options - Configuration options
    * @param {string} options.name - Unique name for this API (required)
-   * @param {string} options.version - Semantic version (default: '1.0.0')
    * @param {Object} options.logging - Logging configuration
    * 
    * The constructor:
-   * 1. Validates configuration (name and version)
+   * 1. Validates configuration (name)
    * 2. Sets up internal state management
    * 3. Initializes the logging system
-   * 4. Registers the API in the global registry
-   * 5. Sets up proxy for scope access (api.scopes.xxx)
+   * 4. Sets up proxy for scope access (api.scopes.xxx)
    */
   constructor(options = {}) {
     /**
@@ -327,7 +316,6 @@ export class Api {
      */
     this.options = {
       name: null,
-      version: '1.0.0',
       ...options
     }
     
@@ -338,7 +326,7 @@ export class Api {
     this.options.logging = { ...defaultLogging, ...(options.logging || {}) }
 
     /**
-     * Validate API name - required for registry and identification
+     * Validate API name - required for identification
      * The name is used to:
      * - Register the API globally
      * - Generate plugin names
@@ -350,32 +338,11 @@ export class Api {
                       this.options.name === '' ? 'empty string' :
                       `${typeof this.options.name} "${this.options.name}"`;
       throw new ConfigurationError(
-        `API instance must have a non-empty name property. Received: ${received}. Example: new Api({ name: 'my-api', version: '1.0.0' })`,
+        `API instance must have a non-empty name property. Received: ${received}. Example: new Api({ name: 'my-api' })`,
         { 
           received: this.options.name,
           expected: 'non-empty string',
-          example: "new Api({ name: 'my-api', version: '1.0.0' })"
-        }
-      );
-    }
-    /**
-     * Validate version format using semver
-     * Semantic versioning enables:
-     * - Version compatibility checks
-     * - Registry version management
-     * - Plugin dependency resolution
-     */
-    if (!semver.valid(this.options.version)) {
-      const versionType = typeof this.options.version;
-      const suggestion = versionType === 'string' ? 
-        `Did you mean '${this.options.version}.0' or '${this.options.version}.0.0'?` :
-        `Version must be a string in semver format (e.g., '1.0.0', '2.1.3').`;
-      throw new ConfigurationError(
-        `Invalid version format for API '${this.options.name}'. Received: ${versionType === 'string' ? `'${this.options.version}'` : versionType}. ${suggestion}`,
-        {
-          received: this.options.version,
-          expected: 'semver format (e.g., 1.0.0)',
-          example: "{ version: '1.0.0' }"
+          example: "new Api({ name: 'my-api' })"
         }
       );
     }
@@ -641,11 +608,6 @@ export class Api {
       }
     });
 
-    /**
-     * Register this API instance in the global registry
-     * Enables cross-API communication and version management
-     */
-    this._register()
     
     /**
      * Expose certain internal methods as public API
@@ -986,160 +948,6 @@ export class Api {
     logger.trace = (msg, data) => log(LogLevel.TRACE, msg, data);
     
     return logger;
-  }
-
-  /**
-   * Registers this API instance in the global registry
-   * 
-   * @private
-   * @returns {Api} This instance for chaining
-   * @throws {ConfigurationError} If the API name/version combination already exists
-   * 
-   * Registration enables:
-   * - Cross-API communication via Api.registry.get()
-   * - Version management with semver support
-   * - Plugin dependency resolution across APIs
-   * - Global API discovery and introspection
-   */
-  _register() {
-    const { name, version } = this.options
-
-    // Ensure the API name has a version map
-    if (!globalRegistry.has(name)) {
-      globalRegistry.set(name, new Map())
-    }
-
-    // Check for duplicate registrations
-    if (globalRegistry.get(name).has(version)) {
-      const existingVersions = Array.from(globalRegistry.get(name).keys()).sort(semver.rcompare);
-      throw new ConfigurationError(
-        `API '${name}' version '${version}' is already registered. Existing versions: ${existingVersions.join(', ')}. Use a different version number or get the existing instance with Api.registry.get('${name}', '${version}').`,
-        {
-          received: version,
-          expected: 'unique version number',
-          example: `Api.registry.get('${name}', '${version}')`
-        }
-      );
-    }
-
-    // Register this instance
-    globalRegistry.get(name).set(version, this)
-    return this
-  }
-
-  /**
-   * Static registry for global API instance management
-   * 
-   * The registry provides:
-   * - API instance retrieval by name and version
-   * - Semver range queries (e.g., '^1.0.0', '~2.1.0')
-   * - 'latest' version selection
-   * - API discovery and listing
-   * 
-   * This enables plugins and external code to access APIs
-   * without direct references, supporting loose coupling
-   */
-  static registry = {
-    /**
-     * Retrieves an API instance by name and version
-     * 
-     * @param {string} apiName - Name of the API to retrieve
-     * @param {string} version - Version or range (default: 'latest')
-     * @returns {Api|null} The API instance or null if not found
-     * 
-     * Version can be:
-     * - 'latest' - Returns the highest version
-     * - Exact version - '1.0.0' returns that specific version
-     * - Semver range - '^1.0.0' returns highest matching version
-     */
-    get(apiName, version = 'latest') {
-      const versions = globalRegistry.get(apiName)
-      if (!versions) return null;
-
-      // Try exact match first
-      if (version !== 'latest' && versions.has(version)) {
-        return versions.get(version);
-      }
-
-      // Special case for 'latest' - return highest version
-      if (version === 'latest') {
-        const sortedVersions = Array.from(versions.entries())
-          .sort(([a], [b]) => semver.compare(b, a));
-        return sortedVersions[0]?.[1] || null;
-      }
-
-      // Handle empty string explicitly
-      if (version === '') {
-        return null;
-      }
-      
-      // Validate the version string
-      if (!semver.validRange(version)) {
-        return null;
-      }
-
-      // Check if this is an exact version request
-      if (semver.valid(version)) {
-        // Exact version was requested but doesn't exist
-        return null;
-      }
-
-      // Handle semver range queries
-      const sortedVersions = Array.from(versions.entries())
-        .sort(([a], [b]) => semver.compare(b, a));
-      
-      for (const [ver, api] of sortedVersions) {
-        if (semver.satisfies(ver, version)) {
-          return api;
-        }
-      }
-
-      return null;
-    },
-
-    /**
-     * Lists all registered APIs and their versions
-     * 
-     * @returns {Object} Map of API names to sorted version arrays
-     * 
-     * Example return value:
-     * {
-     *   'my-api': ['2.0.0', '1.5.0', '1.0.0'],
-     *   'auth-api': ['1.0.0']
-     * }
-     */
-    list() {
-      const registry = {}
-      for (const [apiName, versionsMap] of globalRegistry) {
-        registry[apiName] = Array.from(versionsMap.keys()).sort(semver.rcompare)
-      }
-      return registry
-    },
-
-    /**
-     * Checks if an API (and optionally specific version) exists
-     * 
-     * @param {string} apiName - Name of the API
-     * @param {string} [version] - Optional specific version
-     * @returns {boolean} True if exists
-     */
-    has(apiName, version) {
-      if (!apiName) return false;
-      const versions = globalRegistry.get(apiName);
-      if (!versions) return false;
-      return version ? versions.has(version) : versions.size > 0;
-    },
-
-    /**
-     * Gets all versions for a specific API
-     * 
-     * @param {string} apiName - Name of the API
-     * @returns {string[]} Array of versions sorted newest first
-     */
-    versions(apiName) {
-      const versions = globalRegistry.get(apiName);
-      return versions ? Array.from(versions.keys()).sort(semver.rcompare) : [];
-    }
   }
 
   /**
@@ -2381,24 +2189,6 @@ async _addScope(name, options = {}, extras = {}) {
     return this._runHooks(hookName, contextObject, null);
   }
 
-}
-
-/**
- * Utility function to reset the global registry
- * 
- * This is primarily used for testing to ensure a clean state
- * between test runs. In production, the registry persists for
- * the lifetime of the process.
- * 
- * @example
- * import { resetGlobalRegistryForTesting } from 'hooked-api'
- * 
- * beforeEach(() => {
- *   resetGlobalRegistryForTesting()
- * })
- */
-export const resetGlobalRegistryForTesting = () => {
-  globalRegistry = new Map()
 }
 
 /**

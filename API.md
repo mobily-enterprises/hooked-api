@@ -22,14 +22,8 @@ The API instance exposes these public properties and methods:
 - `api.[methodName]()` - Direct calls to defined API methods
 - `api.vars` - Direct proxy access to global variables
 - `api.helpers` - Direct proxy access to global helpers
-- `api.options` - Read-only access to the API configuration (includes name, version, and merged logging config)
+- `api.options` - Read-only access to the API configuration (includes name and merged logging config)
 
-### Static Methods
-
-- `Api.registry.get(name, version)` - Get a registered API instance
-- `Api.registry.list()` - List all registered APIs and their versions
-- `Api.registry.has(name, version)` - Check if an API is registered
-- `Api.registry.versions(name)` - Get all versions of a specific API
 
 
 ## Handler Context Reference
@@ -50,7 +44,7 @@ async ({
   runHooks,       // Function to run hooks: runHooks(hookName)
   log,            // Logger instance for this context
   name,           // The method name being called
-  apiOptions,     // Frozen API configuration {name, version, ...}
+  apiOptions,     // Frozen API configuration {name, ...}
   pluginOptions,  // Frozen plugin configurations {pluginName: options, ...}
   // If setScopeAlias was called:
   [aliasName]     // Same as 'scopes' but with custom name (e.g., 'tables')
@@ -80,7 +74,7 @@ async ({
   runHooks,        // Function to run hooks: runHooks(hookName)
   log,             // Logger instance for this context
   name,            // The method name being called
-  apiOptions,      // Frozen API configuration {name, version, ...}
+  apiOptions,      // Frozen API configuration {name, ...}
   pluginOptions,   // Frozen plugin configurations {pluginName: options, ...}
   scopeOptions,    // Frozen scope-specific options (passed to addScope)
   scopeName,       // Current scope name as string (e.g., 'users')
@@ -510,38 +504,18 @@ const EventMonitorPlugin = {
 
 ## Testing
 
-### Registry Management
-
-The library maintains a global registry of API instances by name and version. For testing, you can reset this registry:
-
-```javascript
-import { resetGlobalRegistryForTesting } from './index.js';
-
-// In your test setup
-beforeEach(() => {
-  resetGlobalRegistryForTesting();
-});
-
-// Now you can create APIs with the same name/version in each test
-test('my test', () => {
-  const api = new Api({ name: 'test-api', version: '1.0.0' });
-  // ... test code
-});
-```
-
 ### Testing Best Practices
 
-1. **Reset the registry between tests** to avoid conflicts
-2. **Use unique API names** per test if running tests in parallel
-3. **Mock external dependencies** in your plugins
-4. **Test hooks independently** by creating minimal APIs
+1. **Use unique API names** per test if running tests in parallel
+2. **Mock external dependencies** in your plugins
+3. **Test hooks independently** by creating minimal APIs
 
 ```javascript
 // Example: Testing a plugin
 import { Api } from './index.js';
 
 test('myPlugin adds expected functionality', async () => {
-  const api = new Api({ name: 'test', version: '1.0.0' });
+  const api = new Api({ name: 'test' });
   
   const myPlugin = {
     name: 'test-plugin',
@@ -605,16 +579,16 @@ Properties:
 - `installedPlugins` - Array of currently installed plugins
 
 #### ConfigurationError
-Thrown when API configuration is invalid (missing name, invalid version, etc.)
+Thrown when API configuration is invalid (missing name, empty name, etc.)
 ```javascript
 try {
-  const api = new Api({ version: 'invalid' });
+  const api = new Api({ name: '' }); // Invalid empty name
 } catch (error) {
   if (error instanceof ConfigurationError) {
     console.log(error.code);     // 'CONFIGURATION_ERROR'
-    console.log(error.received); // 'invalid'
-    console.log(error.expected); // 'semver format (e.g., 1.0.0)'
-    console.log(error.example);  // "{ version: '1.0.0' }"
+    console.log(error.received); // ''
+    console.log(error.expected); // 'non-empty string'
+    console.log(error.example);  // "{ name: 'my-api' }"
   }
 }
 ```

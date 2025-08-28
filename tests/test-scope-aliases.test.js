@@ -1,15 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { Api, resetGlobalRegistryForTesting, ValidationError, ConfigurationError } from '../index.js';
+import { Api, ValidationError, ConfigurationError } from '../index.js';
 
-// Reset registry before each test to avoid conflicts
-test.beforeEach(() => {
-  resetGlobalRegistryForTesting();
-});
 
 test('Scope Aliases', async (t) => {
   await t.test('should create scope alias', async () => {
-    const api = new Api({ name: 'test', version: '1.0.0' });
+    const api = new Api({ name: 'test' });
     await api.customize({
       scopeMethods: {
         get: async () => 'data'
@@ -28,7 +24,7 @@ test('Scope Aliases', async (t) => {
   });
 
   await t.test('should create addScope alias', async () => {
-    const api = new Api({ name: 'test', version: '1.0.0' });
+    const api = new Api({ name: 'test' });
     
     api.setScopeAlias('resources', 'addResource');
     
@@ -41,7 +37,7 @@ test('Scope Aliases', async (t) => {
   });
 
   await t.test('should validate alias names', () => {
-    const api = new Api({ name: 'test', version: '1.0.0' });
+    const api = new Api({ name: 'test' });
     
     assert.throws(
       () => api.setScopeAlias(''),
@@ -55,7 +51,7 @@ test('Scope Aliases', async (t) => {
   });
 
   await t.test('should handle null alias to skip setting', () => {
-    const api = new Api({ name: 'test', version: '1.0.0' });
+    const api = new Api({ name: 'test' });
     
     // This should not throw
     api.setScopeAlias(null, 'addResource');
@@ -67,7 +63,7 @@ test('Scope Aliases', async (t) => {
 
   await t.test('should make alias available in handler context', async () => {
     let capturedAlias;
-    const api = new Api({ name: 'test', version: '1.0.0' });
+    const api = new Api({ name: 'test' });
     await api.customize({
       apiMethods: {
         checkAlias: async (context) => {

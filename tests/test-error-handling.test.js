@@ -1,15 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { Api, resetGlobalRegistryForTesting, ValidationError, PluginError, ConfigurationError, ScopeError, MethodError } from '../index.js';
+import { Api, ValidationError, PluginError, ConfigurationError, ScopeError, MethodError } from '../index.js';
 
-// Reset registry before each test to avoid conflicts
-test.beforeEach(() => {
-  resetGlobalRegistryForTesting();
-});
 
 test('Error Handling', async (t) => {
   await t.test('should provide detailed validation errors', async () => {
-    const api = new Api({ name: 'test', version: '1.0.0' });
+    const api = new Api({ name: 'test' });
     
     try {
       await api.addScope('invalid-name', {});
@@ -23,7 +19,7 @@ test('Error Handling', async (t) => {
   });
 
   await t.test('should provide detailed plugin errors', async () => {
-    const api = new Api({ name: 'test', version: '1.0.0' });
+    const api = new Api({ name: 'test' });
     
     try {
       await api.use({ name: 'test-plugin', install: () => {} });
@@ -39,7 +35,7 @@ test('Error Handling', async (t) => {
 
   await t.test('should provide detailed configuration errors', () => {
     try {
-      new Api({ name: '', version: '1.0.0' });
+      new Api({ name: '' });
     } catch (error) {
       assert.ok(error instanceof ConfigurationError);
       assert.equal(error.code, 'CONFIGURATION_ERROR');
@@ -50,7 +46,7 @@ test('Error Handling', async (t) => {
   });
 
   await t.test('should provide detailed scope errors', async () => {
-    const api = new Api({ name: 'test', version: '1.0.0' });
+    const api = new Api({ name: 'test' });
     await api.customize({
       scopeMethods: {
         test: async () => 'ok'
@@ -65,7 +61,7 @@ test('Error Handling', async (t) => {
   });
 
   await t.test('should provide detailed method errors', async () => {
-    const api = new Api({ name: 'test', version: '1.0.0' });
+    const api = new Api({ name: 'test' });
     await api.addScope('users', {});
     
     try {
@@ -79,7 +75,7 @@ test('Error Handling', async (t) => {
   });
 
   await t.test('should handle null and undefined gracefully', async () => {
-    const api = new Api({ name: 'test', version: '1.0.0' });
+    const api = new Api({ name: 'test' });
     
     // Various null/undefined checks
     await assert.rejects(() => api.addScope(null, {}), ValidationError);
@@ -89,7 +85,7 @@ test('Error Handling', async (t) => {
   });
 
   await t.test('should prevent prototype pollution attacks', async () => {
-    const api = new Api({ name: 'test', version: '1.0.0' });
+    const api = new Api({ name: 'test' });
     
     // Try to add dangerous scope names
     await assert.rejects(() => api.addScope('__proto__', {}), ValidationError);
@@ -98,7 +94,7 @@ test('Error Handling', async (t) => {
   });
 
   await t.test('should handle symbol properties safely', () => {
-    const api = new Api({ name: 'test', version: '1.0.0' });
+    const api = new Api({ name: 'test' });
     const sym = Symbol('test');
     
     // Symbols should be filtered out

@@ -117,8 +117,7 @@ import { Api } from 'hooked-api';
 import { db } from './db.js'
 
 const api = new Api({
-  name: 'library-api',
-  version: '1.0.0',
+  name: 'library-api'
 });
 
 api.customize({
@@ -162,8 +161,7 @@ import { Api } from 'hooked-api'
 import { db } from './db.js'
 
 const api = new Api({
-  name: 'library-api',
-  version: '1.0.0',
+  name: 'library-api'
 });
 
 api.customize({
@@ -231,8 +229,7 @@ import { Api } from 'hooked-api';
 import { db } from './db.js'
 
 const api = new Api({
-  name: 'library-api',
-  version: '1.0.0',
+  name: 'library-api'
 });
 
 api.customize({
@@ -348,8 +345,7 @@ import { Api } from 'hooked-api'
 import { db } from './db.js'
 
 const api = new Api({
-  name: 'library-api',
-  version: '1.0.0',
+  name: 'library-api'
 });
 
 api.customize({
@@ -606,8 +602,7 @@ import { GeneratedOnPlugin } from './GeneratedOnPlugin.js'
 
 
 const api = new Api({
-  name: 'library-api',
-  version: '1.0.0'
+  name: 'library-api'
 })
 
 await api.use(DatabasePlugin)
@@ -685,7 +680,7 @@ export const AuthPlugin = {
 };
 
 // Usage
-const api = new Api({ name: 'web-api', version: '1.0.0' });
+const api = new Api({ name: 'web-api' });
 await api.use(HttpServerPlugin);
 await api.use(AuthPlugin);
 
@@ -735,8 +730,7 @@ import { GeneratedOnPlugin } from './GeneratedOnPlugin.js'
 
 
 const api = new DbApi({
-  name: 'library-api',
-  version: '1.0.0'
+  name: 'library-api'
 })
 
 // Initialize the API with its default plugins
@@ -793,7 +787,7 @@ class DbApi extends Api {
 }
 
 // Usage
-const api = new DbApi({ name: 'library-api', version: '1.0.0' });
+const api = new DbApi({ name: 'library-api' });
 await api.initialize();  // Initialize with base plugins
 await api.use(GeneratedOnPlugin);  // User adds this plugin
 
@@ -884,7 +878,6 @@ import { Api, LogLevel } from './index.js';
 
 const api = new Api({
   name: 'my-api',
-  version: '1.0.0',
   logging: {
     level: 'info',        // 'error', 'warn', 'info', 'debug', 'trace'
     format: 'pretty',     // 'pretty' or 'json'
@@ -897,7 +890,6 @@ const api = new Api({
 // Using numeric log level
 const api2 = new Api({
   name: 'my-api-2',
-  version: '1.0.0',
   logging: {
     level: LogLevel.DEBUG,  // Using the exported enum
     logger: console
@@ -907,7 +899,6 @@ const api2 = new Api({
 // Using string log level
 const api3 = new Api({
   name: 'my-api-3',
-  version: '1.0.0',
   logging: {
     level: 'debug',  // Case-insensitive string
     logger: console
@@ -951,7 +942,7 @@ Every handler receives a `log` object that provides logging methods:
 // In your DbApi implementation
 class DbApi extends Api {
   constructor() {
-    super({ name: 'db-api', version: '1.0.0' });
+    super({ name: 'db-api' });
     
     this.customize({
       apiMethods: {
@@ -1073,7 +1064,6 @@ The library automatically tracks execution time for all operations when using DE
 // Enable timing logs
 const api = new Api({
   name: 'my-api',
-  version: '1.0.0',
   logging: { level: 'debug', logger: console }
 });
 
@@ -1115,7 +1105,6 @@ const metricsLogger = {
 
 const api = new Api({
   name: 'my-api',
-  version: '1.0.0',
   logging: { level: 'info', logger: metricsLogger }
 });
 ```
@@ -1142,7 +1131,6 @@ const customLogger = {
 
 const api = new Api({
   name: 'my-api',
-  version: '1.0.0',
   logging: { logger: customLogger }
 });
 ```
@@ -1238,9 +1226,9 @@ api.customize({
 The library prevents duplicate registrations across multiple contexts:
 
 ```javascript
-// Duplicate API versions
-new Api({ name: 'my-api', version: '1.0.0' });
-new Api({ name: 'my-api', version: '1.0.0' }); // Throws ConfigurationError
+// Duplicate APIs with same name
+new Api({ name: 'my-api' });
+new Api({ name: 'my-api' }); // Throws ConfigurationError
 
 // Duplicate scope names
 await api.addScope('users', {});
@@ -1519,118 +1507,3 @@ await api.addScope('normal');   // Only runs if previous error was caught
 4. **Don't modify critical state** - Use hooks for state modifications that affect behavior
 5. **Consider event ordering** - Listeners execute in registration order
 
-## API Registry and Versioning
-
-Hooked API includes a global registry that tracks all API instances by name and version. This enables powerful versioning capabilities and allows different parts of your application to access specific API versions.
-
-### Creating Versioned APIs
-
-Every API instance must have a unique name and version combination:
-
-```javascript
-import { Api } from './index.js';
-
-// Create version 1.0.0
-const apiV1 = new Api({
-  name: 'user-api',
-  version: '1.0.0'
-});
-
-// Create version 2.0.0 with breaking changes
-const apiV2 = new Api({
-  name: 'user-api',
-  version: '2.0.0'
-});
-
-// Attempting to create a duplicate throws an error
-const duplicate = new Api({
-  name: 'user-api',
-  version: '1.0.0'  // Throws ConfigurationError
-});
-```
-
-### Accessing API Instances
-
-The `Api.registry` provides methods to retrieve and query registered APIs:
-
-```javascript
-// Get the latest version (highest semver)
-const latest = Api.registry.get('user-api');
-const alsoLatest = Api.registry.get('user-api', 'latest');
-
-// Get a specific version
-const v1 = Api.registry.get('user-api', '1.0.0');
-const v2 = Api.registry.get('user-api', '2.0.0');
-
-// Use semver ranges
-const compatible = Api.registry.get('user-api', '^1.0.0');  // Gets 1.x.x
-const minor = Api.registry.get('user-api', '~1.0.0');       // Gets 1.0.x
-const anyV2 = Api.registry.get('user-api', '2.x');          // Gets 2.x.x
-
-// Returns null for non-existent versions
-const missing = Api.registry.get('user-api', '3.0.0');      // null
-const invalid = Api.registry.get('user-api', 'invalid');    // null
-```
-
-### Registry Methods
-
-```javascript
-// List all registered APIs and their versions
-const registry = Api.registry.list();
-// Returns: { 'user-api': ['2.0.0', '1.0.0'], 'product-api': ['1.0.0'] }
-
-// Check if an API exists
-Api.registry.has('user-api');           // true
-Api.registry.has('user-api', '1.0.0');  // true
-Api.registry.has('user-api', '3.0.0');  // false
-
-// Get all versions of a specific API
-const versions = Api.registry.versions('user-api');
-// Returns: ['2.0.0', '1.0.0'] (sorted by semver, highest first)
-```
-
-### Version Migration Example
-
-The registry enables smooth version migrations:
-
-```javascript
-// Old code using v1
-function oldFeature() {
-  const api = Api.registry.get('user-api', '^1.0.0');
-  return api.scopes.users.list();
-}
-
-// New code using v2
-function newFeature() {
-  const api = Api.registry.get('user-api', '^2.0.0');
-  return api.scopes.users.query();  // v2 uses 'query' instead of 'list'
-}
-
-// Adapter for backward compatibility
-function adaptedFeature(version = 'latest') {
-  const api = Api.registry.get('user-api', version);
-  
-  if (api.options.version.startsWith('1.')) {
-    return api.scopes.users.list();
-  } else {
-    return api.scopes.users.query();
-  }
-}
-```
-
-### Best Practices
-
-1. **Semantic Versioning**: Follow semver conventions (major.minor.patch)
-2. **Version Documentation**: Document breaking changes between major versions
-3. **Gradual Migration**: Use the registry to run multiple versions during transitions
-4. **Version Detection**: Check `api.options.version` when behavior differs between versions
-5. **Testing**: Use `resetGlobalRegistryForTesting()` between tests to avoid conflicts
-
-```javascript
-import { resetGlobalRegistryForTesting } from './index.js';
-
-// In your test setup
-beforeEach(() => {
-  resetGlobalRegistryForTesting();
-});
-```

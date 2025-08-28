@@ -1,15 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { Api, resetGlobalRegistryForTesting, PluginError } from '../index.js';
+import { Api, PluginError } from '../index.js';
 
-// Reset registry before each test to avoid conflicts
-test.beforeEach(() => {
-  resetGlobalRegistryForTesting();
-});
 
 test('Plugin System', async (t) => {
   await t.test('should install and use plugins', async () => {
-    const api = new Api({ name: 'test', version: '1.0.0' });
+    const api = new Api({ name: 'test' });
     let installed = false;
 
     const testPlugin = {
@@ -24,7 +20,7 @@ test('Plugin System', async (t) => {
   });
 
   await t.test('should provide install context to plugins', async () => {
-    const api = new Api({ name: 'test', version: '1.0.0' });
+    const api = new Api({ name: 'test' });
     let capturedContext;
 
     const testPlugin = {
@@ -43,7 +39,7 @@ test('Plugin System', async (t) => {
   });
 
   await t.test('should provide api reference to plugins', async () => {
-    const api = new Api({ name: 'test', version: '1.0.0' });
+    const api = new Api({ name: 'test' });
     let capturedApi;
     let contextApi;
 
@@ -65,14 +61,14 @@ test('Plugin System', async (t) => {
     
     // Verify api has expected properties
     assert.equal(capturedApi.options.name, 'test', 'api should have correct name');
-    assert.equal(capturedApi.options.version, '1.0.0', 'api should have correct version');
+    // Version parameter removed from API
     
     // Verify api is accessible via context
     assert.equal(contextApi.api, api, 'api should be accessible via context.api');
   });
 
   await t.test('should allow plugins to add API methods', async () => {
-    const api = new Api({ name: 'test', version: '1.0.0' });
+    const api = new Api({ name: 'test' });
 
     const methodPlugin = {
       name: 'method-plugin',
@@ -87,7 +83,7 @@ test('Plugin System', async (t) => {
   });
 
   await t.test('should pass plugin options to handlers', async () => {
-    const api = new Api({ name: 'test', version: '1.0.0' });
+    const api = new Api({ name: 'test' });
 
     const optionsPlugin = {
       name: 'options-plugin',
@@ -104,7 +100,7 @@ test('Plugin System', async (t) => {
   });
 
   await t.test('should check plugin dependencies', async () => {
-    const api = new Api({ name: 'test', version: '1.0.0' });
+    const api = new Api({ name: 'test' });
 
     const dependentPlugin = {
       name: 'dependent',
@@ -119,7 +115,7 @@ test('Plugin System', async (t) => {
   });
 
   await t.test('should prevent duplicate plugin installation', async () => {
-    const api = new Api({ name: 'test', version: '1.0.0' });
+    const api = new Api({ name: 'test' });
 
     const plugin = {
       name: 'test-plugin',
@@ -134,7 +130,7 @@ test('Plugin System', async (t) => {
   });
 
   await t.test('should validate plugin structure', async () => {
-    const api = new Api({ name: 'test', version: '1.0.0' });
+    const api = new Api({ name: 'test' });
 
     // Missing name
     await assert.rejects(
@@ -156,7 +152,7 @@ test('Plugin System', async (t) => {
   });
 
   await t.test('should prevent reserved plugin names', async () => {
-    const api = new Api({ name: 'test', version: '1.0.0' });
+    const api = new Api({ name: 'test' });
 
     await assert.rejects(
       () => api.use({ name: 'api', install: () => {} }),
@@ -170,7 +166,7 @@ test('Plugin System', async (t) => {
   });
 
   await t.test('should handle plugin installation errors', async () => {
-    const api = new Api({ name: 'test', version: '1.0.0' });
+    const api = new Api({ name: 'test' });
 
     const errorPlugin = {
       name: 'error-plugin',
@@ -186,7 +182,7 @@ test('Plugin System', async (t) => {
   });
 
   await t.test('should allow plugins to use api reference for advanced functionality', async () => {
-    const api = new Api({ name: 'test', version: '1.0.0' });
+    const api = new Api({ name: 'test' });
     
     // First plugin creates a namespace
     const namespacePlugin = {
@@ -240,7 +236,7 @@ test('Plugin System', async (t) => {
   });
 
   await t.test('should allow plugins to add hooks with auto-injected plugin name', async () => {
-    const api = new Api({ name: 'test', version: '1.0.0' });
+    const api = new Api({ name: 'test' });
     const hookCalls = [];
 
     const hookPlugin = {

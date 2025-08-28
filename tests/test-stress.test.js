@@ -1,16 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { Api, LogLevel, resetGlobalRegistryForTesting, ConfigurationError, ValidationError, PluginError, ScopeError, MethodError } from '../index.js';
+import { Api, LogLevel, ConfigurationError, ValidationError, PluginError, ScopeError, MethodError } from '../index.js';
 
-// Reset registry before each test to avoid conflicts
-test.beforeEach(() => {
-  resetGlobalRegistryForTesting();
-});
 
 // Test 1: Stress test with many methods
 test('Stress test with large number of methods', async (t) => {
   await t.test('should handle 10,000 methods efficiently', async () => {
-    const api = new Api({ name: 'stress-test', version: '1.0.0' });
+    const api = new Api({ name: 'stress-test' });
     const methods = {};
     const results = [];
 
@@ -41,7 +37,7 @@ test('Stress test with large number of methods', async (t) => {
   });
 
   await t.test('should handle deeply nested hook chains', async () => {
-    const api = new Api({ name: 'hook-stress', version: '1.0.0' });
+    const api = new Api({ name: 'hook-stress' });
     const hookExecutions = [];
 
     api.customize({
@@ -71,7 +67,7 @@ test('Stress test with large number of methods', async (t) => {
   });
 
   await t.test('should handle concurrent method calls on same API', async () => {
-    const api = new Api({ name: 'concurrent', version: '1.0.0' });
+    const api = new Api({ name: 'concurrent' });
     const callOrder = [];
     const delays = [50, 10, 30, 20, 40, 15, 25, 35, 45, 5];
 
@@ -111,7 +107,6 @@ test('Stress test with large number of methods', async (t) => {
     for (let i = 0; i < 1000; i++) {
       const api = new Api({ 
         name: `rapid-${i}`, 
-        version: '1.0.0',
         logging: { level: 'error', logger: console } // Minimal logging
       });
       
@@ -128,12 +123,12 @@ test('Stress test with large number of methods', async (t) => {
       apis.push(api);
     }
 
-    // All should be in registry
-    assert.equal(Api.registry.list()['rapid-999'].length, 1);
+    // All APIs were created successfully
+    assert.equal(apis.length, 1000);
   });
 
   await t.test('should handle memory-intensive operations', async () => {
-    const api = new Api({ name: 'memory-test', version: '1.0.0' });
+    const api = new Api({ name: 'memory-test' });
     
     // Create large data structures
     const largeArray = new Array(100000).fill('x');
@@ -169,7 +164,7 @@ test('Stress test with large number of methods', async (t) => {
 // Test 2: Complex plugin dependency graphs
 test('Complex plugin dependency graphs', async (t) => {
   await t.test('should handle diamond dependency pattern', async () => {
-    const api = new Api({ name: 'diamond', version: '1.0.0' });
+    const api = new Api({ name: 'diamond' });
     const order = [];
 
     // D depends on B and C, both depend on A
@@ -207,7 +202,7 @@ test('Complex plugin dependency graphs', async (t) => {
   });
 
   await t.test('should detect circular dependencies in complex graphs', async () => {
-    const api = new Api({ name: 'circular', version: '1.0.0' });
+    const api = new Api({ name: 'circular' });
 
     // Create a complex circular dependency
     const pluginA = { name: 'A', dependencies: ['C'], install: () => {} };
@@ -221,7 +216,7 @@ test('Complex plugin dependency graphs', async (t) => {
   });
 
   await t.test('should handle deep dependency chains', async () => {
-    const api = new Api({ name: 'deep-deps', version: '1.0.0' });
+    const api = new Api({ name: 'deep-deps' });
     const plugins = [];
     const order = [];
 
@@ -244,7 +239,7 @@ test('Complex plugin dependency graphs', async (t) => {
   });
 
   await t.test('should handle missing transitive dependencies', async () => {
-    const api = new Api({ name: 'transitive', version: '1.0.0' });
+    const api = new Api({ name: 'transitive' });
 
     const pluginA = { name: 'A', install: () => {} };
     const pluginB = { name: 'B', dependencies: ['A'], install: () => {} };
@@ -257,7 +252,7 @@ test('Complex plugin dependency graphs', async (t) => {
   });
 
   await t.test('should handle plugin options inheritance', async () => {
-    const api = new Api({ name: 'options-test', version: '1.0.0' });
+    const api = new Api({ name: 'options-test' });
     const capturedOptions = {};
 
     const basePlugin = {
@@ -293,7 +288,7 @@ test('Complex plugin dependency graphs', async (t) => {
 // Test 3: Extreme parameter validation
 test('Extreme parameter validation', async (t) => {
   await t.test('should handle all JavaScript primitive types as params', async () => {
-    const api = new Api({ name: 'primitives', version: '1.0.0' });
+    const api = new Api({ name: 'primitives' });
     
     api.customize({
       apiMethods: {
@@ -337,7 +332,7 @@ test('Extreme parameter validation', async (t) => {
   });
 
   await t.test('should handle special object types as params', async () => {
-    const api = new Api({ name: 'objects', version: '1.0.0' });
+    const api = new Api({ name: 'objects' });
     
     api.customize({
       apiMethods: {
@@ -378,7 +373,7 @@ test('Extreme parameter validation', async (t) => {
   });
 
   await t.test('should handle params with circular references', async () => {
-    const api = new Api({ name: 'circular', version: '1.0.0' });
+    const api = new Api({ name: 'circular' });
     
     api.customize({
       apiMethods: {
@@ -410,7 +405,7 @@ test('Extreme parameter validation', async (t) => {
   });
 
   await t.test('should handle params with prototype chain modifications', async () => {
-    const api = new Api({ name: 'prototype', version: '1.0.0' });
+    const api = new Api({ name: 'prototype' });
     
     api.customize({
       apiMethods: {
@@ -436,7 +431,7 @@ test('Extreme parameter validation', async (t) => {
   });
 
   await t.test('should handle params that throw on property access', async () => {
-    const api = new Api({ name: 'throwing', version: '1.0.0' });
+    const api = new Api({ name: 'throwing' });
     
     api.customize({
       apiMethods: {
@@ -467,7 +462,7 @@ test('Extreme parameter validation', async (t) => {
 // Test 4: Edge cases in vars and helpers
 test('Edge cases in vars and helpers', async (t) => {
   await t.test('should handle vars mutations across method calls', async () => {
-    const api = new Api({ name: 'mutation', version: '1.0.0' });
+    const api = new Api({ name: 'mutation' });
     
     api.customize({
       vars: {
@@ -512,7 +507,7 @@ test('Edge cases in vars and helpers', async (t) => {
   });
 
   await t.test('should handle helper functions that return other functions', async () => {
-    const api = new Api({ name: 'higher-order', version: '1.0.0' });
+    const api = new Api({ name: 'higher-order' });
     
     api.customize({
       helpers: {
@@ -562,7 +557,7 @@ test('Edge cases in vars and helpers', async (t) => {
   });
 
   await t.test('should handle vars with proxy traps', async () => {
-    const api = new Api({ name: 'proxy-vars', version: '1.0.0' });
+    const api = new Api({ name: 'proxy-vars' });
     
     const accessLog = [];
     const proxyVar = new Proxy({}, {
@@ -601,7 +596,7 @@ test('Edge cases in vars and helpers', async (t) => {
   });
 
   await t.test('should handle helper binding and context', async () => {
-    const api = new Api({ name: 'binding', version: '1.0.0' });
+    const api = new Api({ name: 'binding' });
     
     const externalObj = {
       value: 42,
@@ -636,7 +631,7 @@ test('Edge cases in vars and helpers', async (t) => {
   });
 
   await t.test('should handle vars namespace collisions', async () => {
-    const api = new Api({ name: 'collision', version: '1.0.0' });
+    const api = new Api({ name: 'collision' });
     
     api.customize({
       vars: {
@@ -693,7 +688,7 @@ test('Edge cases in vars and helpers', async (t) => {
 // Test 5: Error propagation and handling
 test('Error propagation and handling', async (t) => {
   await t.test('should preserve async error stack traces', async () => {
-    const api = new Api({ name: 'error-stack', version: '1.0.0' });
+    const api = new Api({ name: 'error-stack' });
     
     function deepFunction() {
       throw new Error('Deep error');
@@ -746,7 +741,7 @@ test('Error propagation and handling', async (t) => {
   });
 
   await t.test('should handle errors in different hook phases', async () => {
-    const api = new Api({ name: 'hook-errors', version: '1.0.0' });
+    const api = new Api({ name: 'hook-errors' });
     const errors = [];
 
     api.customize({
@@ -795,7 +790,7 @@ test('Error propagation and handling', async (t) => {
   });
 
   await t.test('should handle errors with different types', async () => {
-    const api = new Api({ name: 'error-types', version: '1.0.0' });
+    const api = new Api({ name: 'error-types' });
     
     api.customize({
       apiMethods: {
@@ -837,7 +832,7 @@ test('Error propagation and handling', async (t) => {
   });
 
   await t.test('should handle promise rejection in various contexts', async () => {
-    const api = new Api({ name: 'rejection', version: '1.0.0' });
+    const api = new Api({ name: 'rejection' });
     
     api.customize({
       helpers: {
@@ -883,98 +878,32 @@ test('Error propagation and handling', async (t) => {
   });
 });
 
-// Test 6: Registry edge cases
-test('Registry edge cases', async (t) => {
-  await t.test('should handle registry queries with invalid inputs', () => {
-    // Test with various invalid inputs
-    const invalidInputs = [
-      null,
-      undefined,
-      '',
-      123,
-      true,
-      {},
-      [],
-      () => {},
-      Symbol('test'),
-      NaN,
-      Infinity
-    ];
-
-    for (const input of invalidInputs) {
-      assert.equal(Api.registry.get(input), null);
-      assert.equal(Api.registry.get('test', input), null);
-      assert.equal(Api.registry.has(input), false);
-      assert.deepEqual(Api.registry.versions(input), []);
-    }
-  });
-
-  await t.test('should handle version conflicts correctly', () => {
-    // Create multiple versions
-    new Api({ name: 'version-test', version: '1.0.0' });
-    new Api({ name: 'version-test', version: '1.0.1' });
-    new Api({ name: 'version-test', version: '1.1.0' });
-    new Api({ name: 'version-test', version: '2.0.0-beta.1' });
-    new Api({ name: 'version-test', version: '2.0.0' });
-
-    // Test various version queries
-    assert.ok(Api.registry.get('version-test', '1.0.0'));
-    assert.ok(Api.registry.get('version-test', '^1.0.0'));
-    assert.ok(Api.registry.get('version-test', '~1.0.0'));
-    assert.ok(Api.registry.get('version-test', '>=1.0.0 <2.0.0'));
-    assert.ok(Api.registry.get('version-test', '2.0.0-beta.1'));
-    
-    // Latest should be 2.0.0, not beta
-    const latest = Api.registry.get('version-test', 'latest');
-    assert.equal(latest.options.version, '2.0.0');
-  });
-
-  await t.test('should handle concurrent registry operations', async () => {
-    const promises = [];
-    
-    // Simulate concurrent API creation and registry access
-    for (let i = 0; i < 100; i++) {
-      promises.push(
-        Promise.resolve().then(() => {
-          const api = new Api({ name: `concurrent-${i % 10}`, version: `1.0.${i}` });
-          return Api.registry.get(`concurrent-${i % 10}`, 'latest');
-        })
-      );
-    }
-
-    const results = await Promise.all(promises);
-    assert.equal(results.filter(r => r !== null).length, 100);
-  });
-
-  await t.test('should maintain registry integrity under stress', () => {
+// Test 6: API creation stress testing
+test('API creation stress testing', async (t) => {
+  await t.test('should handle multiple APIs with similar names', () => {
     // Create many APIs with similar names
     const apis = [];
     for (let i = 0; i < 100; i++) {
       apis.push(new Api({ 
-        name: `stress-${Math.floor(i / 10)}`, 
-        version: `1.${i % 10}.0` 
+        name: `stress-${Math.floor(i / 10)}-${i % 10}`, 
       }));
     }
 
-    // Verify registry structure
-    const list = Api.registry.list();
-    for (let i = 0; i < 10; i++) {
-      const versions = list[`stress-${i}`];
-      assert.ok(Array.isArray(versions));
-      assert.equal(versions.length, 10);
+    // Verify all APIs were created successfully
+    assert.equal(apis.length, 100);
+    
+    // Verify each API has correct name
+    for (let i = 0; i < 100; i++) {
+      const expectedName = `stress-${Math.floor(i / 10)}-${i % 10}`;
+      assert.equal(apis[i].options.name, expectedName);
     }
-
-    // Verify version ordering
-    const versions = Api.registry.versions('stress-0');
-    assert.equal(versions[0], '1.9.0'); // Highest version first
-    assert.equal(versions[9], '1.0.0'); // Lowest version last
   });
 });
 
 // Test 7: Complex scope interactions
 test('Complex scope interactions', async (t) => {
   await t.test('should handle cross-scope method calls', async () => {
-    const api = new Api({ name: 'cross-scope', version: '1.0.0' });
+    const api = new Api({ name: 'cross-scope' });
     const callLog = [];
 
     await api.customize({
@@ -999,7 +928,7 @@ test('Complex scope interactions', async (t) => {
   });
 
   await t.test('should handle recursive scope method calls', async () => {
-    const api = new Api({ name: 'recursive', version: '1.0.0' });
+    const api = new Api({ name: 'recursive' });
     
     await api.customize({
       scopeMethods: {
@@ -1023,7 +952,7 @@ test('Complex scope interactions', async (t) => {
   });
 
   await t.test('should handle scope method overrides', async () => {
-    const api = new Api({ name: 'override', version: '1.0.0' });
+    const api = new Api({ name: 'override' });
     
     // Define global scope method
     await api.customize({
@@ -1050,7 +979,7 @@ test('Complex scope interactions', async (t) => {
   });
 
   await t.test('should handle dynamic scope creation', async () => {
-    const api = new Api({ name: 'dynamic', version: '1.0.0' });
+    const api = new Api({ name: 'dynamic' });
     
     api.customize({
       apiMethods: {
@@ -1080,7 +1009,6 @@ test('Complex scope interactions', async (t) => {
 
     const api = new Api({ 
       name: 'scope-logging', 
-      version: '1.0.0',
       logging: { level: 'warn', logger: customLogger }
     });
 
@@ -1116,7 +1044,7 @@ test('Complex scope interactions', async (t) => {
 // Test 8: Performance edge cases
 test('Performance edge cases', async (t) => {
   await t.test('should handle rapid hook additions and removals efficiently', async () => {
-    const api = new Api({ name: 'hook-perf', version: '1.0.0' });
+    const api = new Api({ name: 'hook-perf' });
     
     api.customize({
       apiMethods: {
@@ -1149,7 +1077,7 @@ test('Performance edge cases', async (t) => {
   });
 
   await t.test('should handle large context objects efficiently', async () => {
-    const api = new Api({ name: 'context-size', version: '1.0.0' });
+    const api = new Api({ name: 'context-size' });
     
     api.customize({
       apiMethods: {
@@ -1195,7 +1123,7 @@ test('Performance edge cases', async (t) => {
   });
 
   await t.test('should handle method call bursts', async () => {
-    const api = new Api({ name: 'burst', version: '1.0.0' });
+    const api = new Api({ name: 'burst' });
     let concurrentCalls = 0;
     let maxConcurrent = 0;
 
@@ -1230,7 +1158,7 @@ test('Performance edge cases', async (t) => {
   });
 
   await t.test('should handle memory pressure gracefully', async () => {
-    const api = new Api({ name: 'memory', version: '1.0.0' });
+    const api = new Api({ name: 'memory' });
     
     api.customize({
       apiMethods: {

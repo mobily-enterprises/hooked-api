@@ -1,15 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { Api, resetGlobalRegistryForTesting, ValidationError, MethodError } from '../index.js';
+import { Api, ValidationError, MethodError } from '../index.js';
 
-// Reset registry before each test to avoid conflicts
-test.beforeEach(() => {
-  resetGlobalRegistryForTesting();
-});
 
 test('API Methods', async (t) => {
   await t.test('should add and call API methods', async () => {
-    const api = new Api({ name: 'test', version: '1.0.0' });
+    const api = new Api({ name: 'test' });
     api.customize({
       apiMethods: {
         getData: async ({ params }) => {
@@ -24,7 +20,7 @@ test('API Methods', async (t) => {
 
   await t.test('should provide all handler parameters to API methods', async () => {
     let capturedParams;
-    const api = new Api({ name: 'test', version: '1.0.0' });
+    const api = new Api({ name: 'test' });
     api.customize({
       apiMethods: {
         testMethod: async (handlerParams) => {
@@ -44,7 +40,7 @@ test('API Methods', async (t) => {
   });
 
   await t.test('should throw error for invalid method name', async () => {
-    const api = new Api({ name: 'test', version: '1.0.0' });
+    const api = new Api({ name: 'test' });
     await assert.rejects(
       async () => await api.customize({
         apiMethods: {
@@ -56,7 +52,7 @@ test('API Methods', async (t) => {
   });
 
   await t.test('should handle null as method name becoming "null" string', async () => {
-    const api = new Api({ name: 'test', version: '1.0.0' });
+    const api = new Api({ name: 'test' });
     // When using [null] as a key, it becomes the string "null"
     await api.customize({
       apiMethods: {
@@ -68,7 +64,7 @@ test('API Methods', async (t) => {
   });
 
   await t.test('should throw error for non-function handler', async () => {
-    const api = new Api({ name: 'test', version: '1.0.0' });
+    const api = new Api({ name: 'test' });
     await assert.rejects(
       async () => await api.customize({
         apiMethods: {
@@ -80,7 +76,7 @@ test('API Methods', async (t) => {
   });
 
   await t.test('should throw error when method conflicts with existing property', async () => {
-    const api = new Api({ name: 'test', version: '1.0.0' });
+    const api = new Api({ name: 'test' });
     await assert.rejects(
       async () => await api.customize({
         apiMethods: {
@@ -92,7 +88,7 @@ test('API Methods', async (t) => {
   });
 
   await t.test('should handle method errors properly', async () => {
-    const api = new Api({ name: 'test', version: '1.0.0' });
+    const api = new Api({ name: 'test' });
     await api.customize({
       apiMethods: {
         errorMethod: async () => {
@@ -108,7 +104,7 @@ test('API Methods', async (t) => {
   });
 
   await t.test('should maintain context between hooks and methods', async () => {
-    const api = new Api({ name: 'test', version: '1.0.0' });
+    const api = new Api({ name: 'test' });
     await api.customize({
       apiMethods: {
         testMethod: async ({ context, runHooks }) => {

@@ -1,73 +1,42 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { Api, LogLevel, resetGlobalRegistryForTesting, ConfigurationError, ValidationError, PluginError, ScopeError, MethodError } from '../index.js';
+import { Api, LogLevel, ConfigurationError, ValidationError, PluginError, ScopeError, MethodError } from '../index.js';
 
-// Reset registry before each test to avoid conflicts
-test.beforeEach(() => {
-  resetGlobalRegistryForTesting();
-});
 
-// Test 1: Extreme edge cases for API names and versions
-test('Extreme API name and version edge cases', async (t) => {
+// Test 1: Extreme edge cases for API names
+test('Extreme API name edge cases', async (t) => {
   await t.test('should handle unicode characters in API name', () => {
-    const api = new Api({ name: 'test-api-🚀-测试-テスト', version: '1.0.0' });
+    const api = new Api({ name: 'test-api-🚀-测试-テスト' });
     assert.equal(api.options.name, 'test-api-🚀-测试-テスト');
   });
 
   await t.test('should handle very long API names', () => {
     const longName = 'a'.repeat(1000);
-    const api = new Api({ name: longName, version: '1.0.0' });
+    const api = new Api({ name: longName });
     assert.equal(api.options.name, longName);
   });
 
-  await t.test('should handle pre-release versions', () => {
-    const api = new Api({ name: 'test', version: '1.0.0-alpha.1' });
-    assert.equal(api.options.version, '1.0.0-alpha.1');
-  });
 
-  await t.test('should handle build metadata in versions', () => {
-    const api = new Api({ name: 'test', version: '1.0.0+build.123' });
-    assert.equal(api.options.version, '1.0.0+build.123');
-  });
 
   await t.test('should handle whitespace in API names', () => {
     // API names with whitespace are actually allowed by the library
-    const api = new Api({ name: 'test api', version: '1.0.0' });
+    const api = new Api({ name: 'test api' });
     assert.equal(api.options.name, 'test api');
   });
 
   await t.test('should handle special characters in API names', () => {
-    const api = new Api({ name: 'test-api_v2', version: '1.0.0' });
+    const api = new Api({ name: 'test-api_v2' });
     assert.equal(api.options.name, 'test-api_v2');
   });
 
   await t.test('should handle API names starting with numbers', () => {
     // API names starting with numbers are actually allowed by the library
-    const api = new Api({ name: '123test', version: '1.0.0' });
+    const api = new Api({ name: '123test' });
     assert.equal(api.options.name, '123test');
   });
 
-  await t.test('should handle empty string version explicitly', () => {
-    assert.throws(
-      () => new Api({ name: 'test', version: '' }),
-      ConfigurationError
-    );
-  });
 
-  await t.test('should reject version with leading zeros', () => {
-    // semver doesn't accept versions with leading zeros
-    assert.throws(
-      () => new Api({ name: 'test', version: '01.00.00' }),
-      ConfigurationError
-    );
-  });
 
-  await t.test('should handle malformed semver gracefully', () => {
-    assert.throws(
-      () => new Api({ name: 'test', version: '1.0.0.0' }),
-      ConfigurationError
-    );
-  });
 });
 
 // Test 2: Complex logging configurations
@@ -80,7 +49,6 @@ test('Complex logging configurations', async (t) => {
     try {
       const api = new Api({ 
         name: 'test', 
-        version: '1.0.0',
         logging: { logger: customLogger }
       });
       
@@ -101,7 +69,6 @@ test('Complex logging configurations', async (t) => {
     
     const api = new Api({
       name: 'test',
-      version: '1.0.0',
       logging: { logger: badLogger }
     });
 
@@ -123,7 +90,6 @@ test('Complex logging configurations', async (t) => {
 
     const api = new Api({
       name: 'test',
-      version: '1.0.0',
       logging: { logger: customLogger, format: 'json' }
     });
 
@@ -150,7 +116,6 @@ test('Complex logging configurations', async (t) => {
 
     const api = new Api({
       name: 'test',
-      version: '1.0.0',
       logging: { logger: customLogger }
     });
 
@@ -171,7 +136,6 @@ test('Complex logging configurations', async (t) => {
 
     const api = new Api({
       name: 'test',
-      version: '1.0.0',
       logging: { logger: customLogger }
     });
 
@@ -184,13 +148,11 @@ test('Complex logging configurations', async (t) => {
   await t.test('should handle mixed log level types', () => {
     const api1 = new Api({
       name: 'test1',
-      version: '1.0.0',
       logging: { level: 'debug' }
     });
 
     const api2 = new Api({
       name: 'test2',
-      version: '1.0.0',
       logging: { level: 3 } // Numeric equivalent
     });
 
@@ -200,7 +162,6 @@ test('Complex logging configurations', async (t) => {
   await t.test('should handle case-insensitive log levels', () => {
     const api = new Api({
       name: 'test',
-      version: '1.0.0',
       logging: { level: 'DEBUG' }
     });
 
@@ -223,7 +184,6 @@ test('Complex logging configurations', async (t) => {
 
     const api = new Api({
       name: 'test',
-      version: '1.0.0',
       logging: { logger: customLogger, timestamp: true }
     });
 
@@ -239,7 +199,7 @@ test('Complex logging configurations', async (t) => {
 // Test 3: Method and scope edge cases
 test('Method and scope edge cases', async (t) => {
   await t.test('should handle methods with same name as Object prototype methods', async () => {
-    const api = new Api({ name: 'test', version: '1.0.0' });
+    const api = new Api({ name: 'test' });
     
     // These should fail because they conflict with Object prototype
     await assert.rejects(async () => {
@@ -260,7 +220,7 @@ test('Method and scope edge cases', async (t) => {
   });
 
   await t.test('should handle deeply nested params', async () => {
-    const api = new Api({ name: 'test', version: '1.0.0' });
+    const api = new Api({ name: 'test' });
     await api.customize({
       apiMethods: {
         deep: async ({ params }) => {
@@ -276,7 +236,7 @@ test('Method and scope edge cases', async (t) => {
   });
 
   await t.test('should handle method names with special regex characters', async () => {
-    const api = new Api({ name: 'test', version: '1.0.0' });
+    const api = new Api({ name: 'test' });
     
     // These contain special regex characters that should be rejected
     const invalidNames = ['test.method', 'test*method', 'test+method', 'test?method', 'test[method]'];
@@ -293,7 +253,7 @@ test('Method and scope edge cases', async (t) => {
   });
 
   await t.test('should handle scope methods that throw different error types', async () => {
-    const api = new Api({ name: 'test', version: '1.0.0' });
+    const api = new Api({ name: 'test' });
     await api.addScope('errors', {}, {
       scopeMethods: {
         throwString: async () => { throw 'string error'; },
@@ -312,7 +272,7 @@ test('Method and scope edge cases', async (t) => {
   });
 
   await t.test('should handle methods returning various falsy values', async () => {
-    const api = new Api({ name: 'test', version: '1.0.0' });
+    const api = new Api({ name: 'test' });
     api.customize({
       apiMethods: {
         returnNull: async () => null,
@@ -333,7 +293,7 @@ test('Method and scope edge cases', async (t) => {
   });
 
   await t.test('should reject scope names that look like array indices', async () => {
-    const api = new Api({ name: 'test', version: '1.0.0' });
+    const api = new Api({ name: 'test' });
     
     // Numeric strings are not valid JavaScript identifiers
     await assert.rejects(
@@ -343,7 +303,7 @@ test('Method and scope edge cases', async (t) => {
   });
 
   await t.test('should handle very long method chains', async () => {
-    const api = new Api({ name: 'test', version: '1.0.0' });
+    const api = new Api({ name: 'test' });
     let chainCount = 0;
 
     await api.customize({
@@ -366,7 +326,7 @@ test('Method and scope edge cases', async (t) => {
 // Test 4: Hook system edge cases
 test('Hook system edge cases', async (t) => {
   await t.test('should handle hooks that modify context properties', async () => {
-    const api = new Api({ name: 'test', version: '1.0.0' });
+    const api = new Api({ name: 'test' });
     
     // When using customize, you can only define one hook handler per hook name
     // The library design expects plugins to add multiple hooks
@@ -392,7 +352,7 @@ test('Hook system edge cases', async (t) => {
   });
 
   await t.test('should handle async hooks with race conditions', async () => {
-    const api = new Api({ name: 'test', version: '1.0.0' });
+    const api = new Api({ name: 'test' });
     const order = [];
 
     await api.customize({
@@ -431,7 +391,7 @@ test('Hook system edge cases', async (t) => {
   });
 
   await t.test('should handle hooks that throw in different ways', async () => {
-    const api = new Api({ name: 'test', version: '1.0.0' });
+    const api = new Api({ name: 'test' });
     
     api.customize({
       apiMethods: {
@@ -465,7 +425,7 @@ test('Hook system edge cases', async (t) => {
   });
 
   await t.test('should handle hook placement edge cases', async () => {
-    const api = new Api({ name: 'test', version: '1.0.0' });
+    const api = new Api({ name: 'test' });
     const order = [];
 
     await api.use({
@@ -488,7 +448,7 @@ test('Hook system edge cases', async (t) => {
   });
 
   await t.test('should handle hooks with undefined/null handlers gracefully', async () => {
-    const api = new Api({ name: 'test', version: '1.0.0' });
+    const api = new Api({ name: 'test' });
     
     await assert.rejects(() => {
       return api.customize({
@@ -508,7 +468,7 @@ test('Hook system edge cases', async (t) => {
   });
 
   await t.test('should handle very deep hook recursion', async () => {
-    const api = new Api({ name: 'test', version: '1.0.0' });
+    const api = new Api({ name: 'test' });
     let callDepth = 0;
     const maxDepth = 100; // Reduced to avoid stack overflow
 
@@ -538,7 +498,7 @@ test('Hook system edge cases', async (t) => {
 // Test 5: Plugin edge cases
 test('Plugin edge cases', async (t) => {
   await t.test('should handle plugins with circular dependencies', async () => {
-    const api = new Api({ name: 'test', version: '1.0.0' });
+    const api = new Api({ name: 'test' });
     
     const pluginA = {
       name: 'plugin-a',
@@ -563,7 +523,7 @@ test('Plugin edge cases', async (t) => {
   });
 
   await t.test('should handle plugins that modify the API during installation', async () => {
-    const api = new Api({ name: 'test', version: '1.0.0' });
+    const api = new Api({ name: 'test' });
     
     await api.use({
       name: 'modifier',
@@ -580,7 +540,7 @@ test('Plugin edge cases', async (t) => {
   });
 
   await t.test('should handle plugin installation order with complex dependencies', async () => {
-    const api = new Api({ name: 'test', version: '1.0.0' });
+    const api = new Api({ name: 'test' });
     const order = [];
 
     const pluginC = {
@@ -609,7 +569,7 @@ test('Plugin edge cases', async (t) => {
   });
 
   await t.test('should handle plugins with malformed structure', async () => {
-    const api = new Api({ name: 'test', version: '1.0.0' });
+    const api = new Api({ name: 'test' });
     
     // Missing name
     await assert.rejects(() => api.use({ install: () => {} }), PluginError);
@@ -636,7 +596,7 @@ test('Plugin edge cases', async (t) => {
   });
 
   await t.test('should handle plugin names with special characters', async () => {
-    const api = new Api({ name: 'test', version: '1.0.0' });
+    const api = new Api({ name: 'test' });
     
     // Should accept various plugin names
     const validNames = [
@@ -659,7 +619,7 @@ test('Plugin edge cases', async (t) => {
   });
 
   await t.test('should handle plugins that throw during installation', async () => {
-    const api = new Api({ name: 'test', version: '1.0.0' });
+    const api = new Api({ name: 'test' });
     
     await assert.rejects(async () => {
       await api.use({
@@ -675,7 +635,7 @@ test('Plugin edge cases', async (t) => {
   });
 
   await t.test('should handle plugin installation context isolation', async () => {
-    const api = new Api({ name: 'test', version: '1.0.0' });
+    const api = new Api({ name: 'test' });
     let context1, context2;
 
     await api.use({
@@ -700,7 +660,7 @@ test('Plugin edge cases', async (t) => {
 // Test 6: Vars and helpers edge cases
 test('Vars and helpers edge cases', async (t) => {
   await t.test('should handle var name collisions across scopes', async () => {
-    const api = new Api({ name: 'test', version: '1.0.0' });
+    const api = new Api({ name: 'test' });
     
     api.customize({
       vars: { shared: 'api-level' }
@@ -732,7 +692,7 @@ test('Vars and helpers edge cases', async (t) => {
   });
 
   await t.test('should handle helpers that throw errors', async () => {
-    const api = new Api({ name: 'test', version: '1.0.0' });
+    const api = new Api({ name: 'test' });
     
     api.customize({
       helpers: {
@@ -754,7 +714,7 @@ test('Vars and helpers edge cases', async (t) => {
   });
 
   await t.test('should handle vars with getter/setter properties', async () => {
-    const api = new Api({ name: 'test', version: '1.0.0' });
+    const api = new Api({ name: 'test' });
     let secretValue = 'initial';
 
     api.customize({
@@ -777,7 +737,7 @@ test('Vars and helpers edge cases', async (t) => {
   });
 
   await t.test('should handle helpers that modify vars', async () => {
-    const api = new Api({ name: 'test', version: '1.0.0' });
+    const api = new Api({ name: 'test' });
     
     api.customize({
       vars: { counter: 0 },
@@ -807,7 +767,7 @@ test('Vars and helpers edge cases', async (t) => {
   });
 
   await t.test('should handle recursive helper calls', async () => {
-    const api = new Api({ name: 'test', version: '1.0.0' });
+    const api = new Api({ name: 'test' });
     
     api.customize({
       helpers: {
@@ -829,7 +789,7 @@ test('Vars and helpers edge cases', async (t) => {
   });
 
   await t.test('should handle vars containing promises', async () => {
-    const api = new Api({ name: 'test', version: '1.0.0' });
+    const api = new Api({ name: 'test' });
     
     api.customize({
       vars: {
@@ -856,7 +816,7 @@ test('Registry edge cases', async (t) => {
     for (let i = 0; i < 100; i++) {
       promises.push(
         new Promise((resolve) => {
-          const api = new Api({ name: `concurrent-${i}`, version: '1.0.0' });
+          const api = new Api({ name: `concurrent-${i}` });
           resolve(api);
         })
       );
@@ -865,67 +825,37 @@ test('Registry edge cases', async (t) => {
     const apis = await Promise.all(promises);
     assert.equal(apis.length, 100);
 
-    // All should be registered
+    // All should be created successfully
     for (let i = 0; i < 100; i++) {
-      assert.ok(Api.registry.get(`concurrent-${i}`, '1.0.0'));
+      assert.equal(apis[i].options.name, `concurrent-${i}`);
     }
   });
 
-  await t.test('should handle version conflicts with patches', () => {
-    const api1 = new Api({ name: 'version-test', version: '1.0.0' });
-    const api2 = new Api({ name: 'version-test', version: '1.0.1' });
-    const api3 = new Api({ name: 'version-test', version: '1.1.0' });
-    const api4 = new Api({ name: 'version-test', version: '2.0.0' });
 
-    // Test various version queries
-    // Note: Registry returns instances but not necessarily reference-equal
-    assert.ok(Api.registry.get('version-test', '^1.0.0')); // Should get a 1.x version
-    assert.ok(Api.registry.get('version-test', '~1.0.0')); // Should get a 1.0.x version
-    assert.ok(Api.registry.get('version-test', '>=2.0.0')); // Should get 2.0.0 or higher
-    assert.ok(Api.registry.get('version-test', 'latest')); // Should get latest version
+  await t.test('should handle API name validation', () => {
+    // Test that API creation requires valid names
+    assert.throws(() => new Api({ name: null }), ConfigurationError);
+    assert.throws(() => new Api({ name: undefined }), ConfigurationError);
+    assert.throws(() => new Api({ name: '' }), ConfigurationError);
   });
 
-  await t.test('should handle invalid registry queries gracefully', () => {
-    assert.equal(Api.registry.get('non-existent'), null);
-    assert.equal(Api.registry.get('non-existent', '1.0.0'), null);
-    assert.equal(Api.registry.get(null), null);
-    assert.equal(Api.registry.get(undefined), null);
-    assert.equal(Api.registry.get(''), null);
+  await t.test('should handle APIs with special names', () => {
+    // Add APIs with special names (these should be allowed)
+    const api1 = new Api({ name: '__proto__' });
+    const api2 = new Api({ name: 'constructor' });
+    const api3 = new Api({ name: 'toString' });
+
+    assert.equal(api1.options.name, '__proto__');
+    assert.equal(api2.options.name, 'constructor');
+    assert.equal(api3.options.name, 'toString');
   });
 
-  await t.test('should handle registry list with special cases', () => {
-    // Clear registry first
-    resetGlobalRegistryForTesting();
-
-    // Add APIs with special names
-    new Api({ name: '__proto__', version: '1.0.0' });
-    new Api({ name: 'constructor', version: '1.0.0' });
-    new Api({ name: 'toString', version: '1.0.0' });
-
-    const list = Api.registry.list();
-    assert.ok(list['__proto__']);
-    assert.ok(list['constructor']);
-    assert.ok(list['toString']);
-  });
-
-  await t.test('should handle version ranges with pre-releases', () => {
-    new Api({ name: 'prerelease-test', version: '1.0.0' });
-    new Api({ name: 'prerelease-test', version: '1.0.1-alpha.1' });
-    new Api({ name: 'prerelease-test', version: '1.0.1-beta.1' });
-    new Api({ name: 'prerelease-test', version: '1.0.1' });
-
-    // Pre-releases should not match normal ranges
-    assert.equal(Api.registry.get('prerelease-test', '^1.0.0'), Api.registry.get('prerelease-test', '1.0.1'));
-    
-    // But should match when explicitly requested
-    assert.ok(Api.registry.get('prerelease-test', '1.0.1-alpha.1'));
-  });
 });
 
 // Test 8: Error handling edge cases
 test('Error handling edge cases', async (t) => {
   await t.test('should preserve error stack traces through hooks', async () => {
-    const api = new Api({ name: 'test', version: '1.0.0' });
+    const api = new Api({ name: 'test' });
     
     api.customize({
       apiMethods: {
@@ -951,7 +881,7 @@ test('Error handling edge cases', async (t) => {
   });
 
   await t.test('should handle errors with custom properties', async () => {
-    const api = new Api({ name: 'test', version: '1.0.0' });
+    const api = new Api({ name: 'test' });
     
     api.customize({
       apiMethods: {
@@ -976,7 +906,7 @@ test('Error handling edge cases', async (t) => {
   });
 
   await t.test('should handle Symbol.toStringTag errors', () => {
-    const api = new Api({ name: 'test', version: '1.0.0' });
+    const api = new Api({ name: 'test' });
     
     const objWithBadToString = {
       [Symbol.toStringTag]: () => { throw new Error('toStringTag error'); }
@@ -991,7 +921,7 @@ test('Error handling edge cases', async (t) => {
   });
 
   await t.test('should handle errors in error handlers', async () => {
-    const api = new Api({ name: 'test', version: '1.0.0' });
+    const api = new Api({ name: 'test' });
     const logs = [];
     
     api.options.logging.logger = {
@@ -1006,7 +936,7 @@ test('Error handling edge cases', async (t) => {
   });
 
   await t.test('should provide helpful error for common mistakes', async () => {
-    const api = new Api({ name: 'test', version: '1.0.0' });
+    const api = new Api({ name: 'test' });
     
     // Non-async functions are actually allowed
     api.customize({
@@ -1030,7 +960,7 @@ test('Error handling edge cases', async (t) => {
 // Test 9: Memory and performance edge cases
 test('Memory and performance edge cases', async (t) => {
   await t.test('should handle large number of methods efficiently', async () => {
-    const api = new Api({ name: 'test', version: '1.0.0' });
+    const api = new Api({ name: 'test' });
     const methods = {};
 
     // Add 1000 methods
@@ -1052,7 +982,7 @@ test('Memory and performance edge cases', async (t) => {
   });
 
   await t.test('should handle large parameter objects', async () => {
-    const api = new Api({ name: 'test', version: '1.0.0' });
+    const api = new Api({ name: 'test' });
     
     api.customize({
       apiMethods: {
@@ -1073,7 +1003,7 @@ test('Memory and performance edge cases', async (t) => {
   });
 
   await t.test('should not leak memory with repeated calls', async () => {
-    const api = new Api({ name: 'test', version: '1.0.0' });
+    const api = new Api({ name: 'test' });
     let callCount = 0;
 
     api.customize({
@@ -1094,7 +1024,7 @@ test('Memory and performance edge cases', async (t) => {
   });
 
   await t.test('should handle deeply nested scope access efficiently', () => {
-    const api = new Api({ name: 'test', version: '1.0.0' });
+    const api = new Api({ name: 'test' });
     
     // Create nested scope structure
     for (let i = 0; i < 100; i++) {
@@ -1115,7 +1045,7 @@ test('Memory and performance edge cases', async (t) => {
 // Test 10: Integration edge cases
 test('Integration edge cases', async (t) => {
   await t.test('should handle complex plugin and hook interactions', async () => {
-    const api = new Api({ name: 'test', version: '1.0.0' });
+    const api = new Api({ name: 'test' });
     const events = [];
 
     // Plugin 1: Adds base functionality
@@ -1173,7 +1103,7 @@ test('Integration edge cases', async (t) => {
   });
 
   await t.test('should handle scope inheritance patterns', async () => {
-    const api = new Api({ name: 'test', version: '1.0.0' });
+    const api = new Api({ name: 'test' });
     
     // Base configuration
     const baseConfig = {
@@ -1215,7 +1145,7 @@ test('Integration edge cases', async (t) => {
   });
 
   await t.test('should handle cross-scope communication', async () => {
-    const api = new Api({ name: 'test', version: '1.0.0' });
+    const api = new Api({ name: 'test' });
     
     api.addScope('sender', {}, {
       scopeMethods: {
@@ -1251,9 +1181,9 @@ test('Integration edge cases', async (t) => {
 
   await t.test('should handle API composition patterns', async () => {
     // Create multiple APIs that work together
-    const dbApi = new Api({ name: 'db', version: '1.0.0' });
-    const cacheApi = new Api({ name: 'cache', version: '1.0.0' });
-    const appApi = new Api({ name: 'app', version: '1.0.0' });
+    const dbApi = new Api({ name: 'db' });
+    const cacheApi = new Api({ name: 'cache' });
+    const appApi = new Api({ name: 'app' });
 
     // Setup DB API
     dbApi.customize({
@@ -1314,7 +1244,7 @@ test('Integration edge cases', async (t) => {
 // Test 11: Concurrency edge cases
 test('Concurrency edge cases', async (t) => {
   await t.test('should handle racing hook modifications', async () => {
-    const api = new Api({ name: 'test', version: '1.0.0' });
+    const api = new Api({ name: 'test' });
     
     api.customize({
       apiMethods: {
@@ -1341,7 +1271,7 @@ test('Concurrency edge cases', async (t) => {
   });
 
   await t.test('should handle concurrent scope modifications safely', async () => {
-    const api = new Api({ name: 'test', version: '1.0.0' });
+    const api = new Api({ name: 'test' });
     
     // Use a mutable container since vars are frozen
     api.addScope('counter', {}, {
@@ -1369,7 +1299,7 @@ test('Concurrency edge cases', async (t) => {
   });
 
   await t.test('should handle plugin installation during API usage', async () => {
-    const api = new Api({ name: 'test', version: '1.0.0' });
+    const api = new Api({ name: 'test' });
     let methodAvailable = false;
 
     api.customize({
@@ -1408,7 +1338,7 @@ test('Concurrency edge cases', async (t) => {
 // Test 12: Proxy and prototype edge cases
 test('Proxy and prototype edge cases', async (t) => {
   await t.test('should handle proxy trap edge cases', () => {
-    const api = new Api({ name: 'test', version: '1.0.0' });
+    const api = new Api({ name: 'test' });
     api.addScope('test', {});
 
     const scope = api.scopes.test;
@@ -1448,7 +1378,7 @@ test('Proxy and prototype edge cases', async (t) => {
   });
 
   await t.test('should protect against prototype pollution via Object.create', () => {
-    const api = new Api({ name: 'test', version: '1.0.0' });
+    const api = new Api({ name: 'test' });
     
     // Try to pollute prototype via Object.create
     const malicious = Object.create(null);
@@ -1463,7 +1393,7 @@ test('Proxy and prototype edge cases', async (t) => {
   });
 
   await t.test('should handle toString and valueOf edge cases', async () => {
-    const api = new Api({ name: 'test', version: '1.0.0' });
+    const api = new Api({ name: 'test' });
     
     api.customize({
       apiMethods: {
@@ -1480,7 +1410,7 @@ test('Proxy and prototype edge cases', async (t) => {
   });
 
   await t.test('should handle frozen and sealed objects in vars', () => {
-    const api = new Api({ name: 'test', version: '1.0.0' });
+    const api = new Api({ name: 'test' });
     
     const frozen = Object.freeze({ frozen: true });
     const sealed = Object.seal({ sealed: true });

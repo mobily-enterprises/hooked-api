@@ -13,7 +13,6 @@ const customLogger = {
 // Create API with WARN level
 const api = new Api({
   name: 'test-api',
-  version: '1.0.0',
   logging: { 
     level: LogLevel.WARN,  // Only WARN and ERROR should be logged
     logger: customLogger

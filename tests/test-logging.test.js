@@ -1,11 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { Api, LogLevel, resetGlobalRegistryForTesting, ConfigurationError } from '../index.js';
+import { Api, LogLevel, ConfigurationError } from '../index.js';
 
-// Reset registry before each test to avoid conflicts
-test.beforeEach(() => {
-  resetGlobalRegistryForTesting();
-});
 
 test('Logging System', async (t) => {
   await t.test('should respect log levels', async () => {
@@ -18,7 +14,6 @@ test('Logging System', async (t) => {
 
     const api = new Api({
       name: 'test',
-      version: '1.0.0',
       logging: { level: 'warn', logger: customLogger }
     });
     api.customize({
@@ -54,7 +49,6 @@ test('Logging System', async (t) => {
 
     const api = new Api({
       name: 'test',
-      version: '1.0.0',
       logging: { level: LogLevel.WARN, logger: customLogger }
     });
     api.customize({
@@ -75,7 +69,7 @@ test('Logging System', async (t) => {
 
   await t.test('should provide log object to all handlers', async () => {
     let logInfo = {};
-    const api = new Api({ name: 'test', version: '1.0.0' });
+    const api = new Api({ name: 'test' });
     api.customize({
       apiMethods: {
         checkLog: async ({ log }) => {
@@ -115,7 +109,6 @@ test('Logging System', async (t) => {
 
     const api = new Api({
       name: 'test',
-      version: '1.0.0',
       logging: { level: 'warn', logger: customLogger }
     });
     await api.customize({
@@ -149,7 +142,6 @@ test('Logging System', async (t) => {
     assert.throws(
       () => new Api({
         name: 'test',
-        version: '1.0.0',
         logging: { level: 5 } // Invalid numeric level
       }),
       ConfigurationError

@@ -608,7 +608,11 @@ export class Api {
       }
     });
 
-    
+    Object.defineProperty(this, "scopeCount", {
+      get: () => this._scopes.size,
+        enumerable: true
+    });
+
     /**
      * Expose certain internal methods as public API
      * These are core functionality that users need direct access to

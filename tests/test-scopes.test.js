@@ -145,4 +145,77 @@ test('Scope Methods', async (t) => {
       helpers: { global: 'global', scope: 'scope' }
     });
   });
+
+  await t.test('should iterate over scopes with for...in loop', async () => {
+    const api = new Api({ name: 'test' });
+    
+    // Add multiple scopes
+    await api.addScope('users');
+    await api.addScope('posts');
+    await api.addScope('comments');
+    
+    const scopeNames = [];
+    for (const scopeName in api.scopes) {
+      scopeNames.push(scopeName);
+    }
+    
+    assert.deepEqual(scopeNames.sort(), ['comments', 'posts', 'users']);
+  });
+
+  await t.test('should support Object.keys() on scopes', async () => {
+    const api = new Api({ name: 'test' });
+    
+    await api.addScope('users');
+    await api.addScope('posts');
+    
+    const keys = Object.keys(api.scopes);
+    assert.deepEqual(keys.sort(), ['posts', 'users']);
+  });
+
+  await t.test('should support Object.entries() on scopes', async () => {
+    const api = new Api({ name: 'test' });
+    
+    await api.addScope('users');
+    await api.addScope('posts');
+    
+    const entries = Object.entries(api.scopes);
+    const entryNames = entries.map(([name]) => name).sort();
+    assert.deepEqual(entryNames, ['posts', 'users']);
+    
+    // Each entry should be a tuple of [name, scopeProxy]
+    assert.strictEqual(entries.length, 2);
+    assert.strictEqual(typeof entries[0][0], 'string');
+    assert.strictEqual(typeof entries[0][1], 'function'); // Scope proxy is a function
+  });
+
+  await t.test('should not include dangerous properties in iteration', async () => {
+    const api = new Api({ name: 'test' });
+    
+    await api.addScope('users');
+    await api.addScope('posts');
+    
+    const keys = Object.keys(api.scopes);
+    
+    // Should not include prototype pollution properties
+    assert.ok(!keys.includes('__proto__'));
+    assert.ok(!keys.includes('constructor'));
+    assert.ok(!keys.includes('prototype'));
+  });
+
+  await t.test('should handle empty scopes iteration', async () => {
+    const api = new Api({ name: 'test' });
+    
+    const keys = Object.keys(api.scopes);
+    assert.deepEqual(keys, []);
+    
+    const entries = Object.entries(api.scopes);
+    assert.deepEqual(entries, []);
+    
+    // for...in should not iterate over empty scopes
+    let iterationCount = 0;
+    for (const scopeName in api.scopes) {
+      iterationCount++;
+    }
+    assert.strictEqual(iterationCount, 0);
+  });
 });

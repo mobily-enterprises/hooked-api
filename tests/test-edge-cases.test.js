@@ -1337,45 +1337,7 @@ test('Concurrency edge cases', async (t) => {
 
 // Test 12: Proxy and prototype edge cases
 test('Proxy and prototype edge cases', async (t) => {
-  await t.test('should handle proxy trap edge cases', () => {
-    const api = new Api({ name: 'test' });
-    api.addScope('test', {});
 
-    const scope = api.scopes.test;
-
-    // The proxy doesn't implement 'has' trap, so 'in' operator won't work
-    // Just check that we can access the scope
-    assert.ok(api.scopes.test);
-    assert.ok(!api.scopes.nonexistent);
-
-    // The proxy doesn't implement ownKeys/getOwnPropertyDescriptor
-    // so Object.keys returns empty array
-    api.addScope('another', {});
-    const keys = Object.keys(api.scopes);
-    assert.equal(keys.length, 0); // Proxy doesn't enumerate properties
-
-    // Direct access still works
-    assert.ok(api.scopes.test);
-    assert.ok(api.scopes.another);
-
-    // getOwnPropertyDescriptor returns undefined for proxy
-    const descriptor = Object.getOwnPropertyDescriptor(api.scopes, 'test');
-    assert.equal(descriptor, undefined);
-
-    // Test defineProperty (should fail - but library doesn't implement this trap yet)
-    // TODO: Uncomment when library adds defineProperty trap
-    // assert.throws(() => {
-    //   Object.defineProperty(api.scopes, 'newProp', {
-    //     value: 'test'
-    //   });
-    // });
-
-    // Test delete (should fail - but library doesn't implement this trap yet)
-    // TODO: Uncomment when library adds deleteProperty trap
-    // assert.throws(() => {
-    //   delete api.scopes.test;
-    // });
-  });
 
   await t.test('should protect against prototype pollution via Object.create', () => {
     const api = new Api({ name: 'test' });

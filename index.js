@@ -605,6 +605,35 @@ export class Api {
             return target(...args);
           }
         });
+      },
+      
+      /**
+       * Enable iteration over scopes with for...in loops
+       * Returns all scope names as enumerable properties
+       */
+      ownKeys: (target) => {
+        return Array.from(this._scopes.keys()).filter(key => !isDangerousProp(key));
+      },
+      
+      /**
+       * Provide property descriptors for scope names
+       * This makes scope names appear as enumerable properties
+       */
+      getOwnPropertyDescriptor: (target, prop) => {
+        if (typeof prop === 'symbol' || isDangerousProp(prop)) {
+          return undefined;
+        }
+        
+        if (this._scopes.has(prop)) {
+          return {
+            value: this._scopes.get(prop),
+            enumerable: true,
+            configurable: true,
+            writable: false
+          };
+        }
+        
+        return undefined;
       }
     });
 

@@ -74,7 +74,7 @@ test('Scope Methods', async (t) => {
   await t.test('should handle scope-specific methods', async () => {
     const api = new Api({ name: 'test' });
     
-    await api.addScope('users', {}, {
+    await api.addScope('users', {
       scopeMethods: {
         customMethod: async () => 'users-specific'
       }
@@ -134,7 +134,7 @@ test('Scope Methods', async (t) => {
       }
     });
 
-    await api.addScope('users', {}, {
+    await api.addScope('users', {
       vars: { scope: 'scope-value', shared: 'scope-shared' },
       helpers: { scopeHelper: () => 'scope' }
     });

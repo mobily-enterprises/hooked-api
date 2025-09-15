@@ -12,7 +12,7 @@ The API instance exposes these public properties and methods:
 
 - `await api.use(plugin, options)` - Install plugins with optional configuration
 - `await api.customize(config)` - Add hooks, methods, vars, and helpers after initialization
-- `await api.addScope(name, options, extras)` - Add scopes with configuration and optional customizations
+- `await api.addScope(name, options)` - Add scopes with configuration and customizations
 - `api.setScopeAlias(aliasName, addScopeAlias)` - Create aliases for the scopes property and addScope method
 - `api.scopes` - Access to defined scopes (e.g., `api.scopes.users.get()`)
   - `api.scopes.[scopeName].vars` - Direct access to scope variables (falls back to global vars)

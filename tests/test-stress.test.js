@@ -640,7 +640,7 @@ test('Edge cases in vars and helpers', async (t) => {
       }
     });
 
-    api.addScope('scope1', {}, {
+    api.addScope('scope1', {
       vars: {
         shared: 'scope1-level',
         scope1Only: 'scope1-value'
@@ -654,7 +654,7 @@ test('Edge cases in vars and helpers', async (t) => {
       }
     });
 
-    api.addScope('scope2', {}, {
+    api.addScope('scope2', {
       vars: {
         shared: 'scope2-level',
         scope2Only: 'scope2-value'
@@ -713,7 +713,7 @@ test('Error propagation and handling', async (t) => {
       }
     });
 
-    api.addScope('errorScope', {}, {
+    api.addScope('errorScope', {
       scopeMethods: {
         throwError: async () => {
           throw new Error('Scope error');
@@ -962,7 +962,7 @@ test('Complex scope interactions', async (t) => {
     });
 
     // Add scope with override
-    await api.addScope('special', {}, {
+    await api.addScope('special', {
       scopeMethods: {
         getName: async ({ scopeName }) => `Special: ${scopeName}`
       }

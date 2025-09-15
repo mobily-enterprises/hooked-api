@@ -163,7 +163,7 @@ test('Hook System', async (t) => {
       }
     });
 
-    await api.addScope('users', {}, {
+    await api.addScope('users', {
       hooks: {
         scopeHook: ({ scopeName }) => calls.push(`users-${scopeName}`)
       }
@@ -255,7 +255,7 @@ test('Hook System', async (t) => {
       }
     });
 
-    await api.addScope('users', {}, {
+    await api.addScope('users', {
       hooks: {
         scopeHook: () => {
           calls.push('hook1');

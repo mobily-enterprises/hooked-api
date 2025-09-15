@@ -1616,22 +1616,21 @@ export class Api {
   
   /**
    * Creates a new scope with its own methods, vars, and configuration
-   * 
+   *
    * @private
    * @param {string} name - Scope name (e.g., 'users', 'posts')
-   * @param {Object} options - Scope configuration (frozen and stored)
-   * @param {Object} extras - Additional customizations
+   * @param {Object} options - Scope configuration including hooks, scopeMethods, vars, helpers
    * @returns {Api} This instance for chaining
    * @throws {ValidationError} If scope name is invalid
    * @throws {ScopeError} If scope already exists
-   * 
+   *
    * Scopes are the primary organizational unit in Hooked API:
    * - Each scope represents a logical grouping (often a database table)
    * - Scopes have their own vars, helpers, and methods
    * - Scope methods have access to both global and scope-specific data
    * - Scopes can have custom logging levels and configuration
    */
-async _addScope(name, options = {}, extras = {}) {
+async _addScope(name, options = {}) {
   // Initial validation - This block remains exactly as it was.
     if (!name || typeof name !== 'string') {
       const received = name === undefined ? 'undefined' :
@@ -1682,8 +1681,8 @@ async _addScope(name, options = {}, extras = {}) {
       );
     }
 
-    // Extract extras at the beginning of the logic block
-    const { hooks = {}, scopeMethods = {}, vars = {}, helpers = {} } = extras;
+    // Extract customization options from the options object
+    const { hooks = {}, scopeMethods = {}, vars = {}, helpers = {}, ...scopeOptions } = options;
 
     // Log what's being added
     const additions = [];
@@ -1701,7 +1700,7 @@ async _addScope(name, options = {}, extras = {}) {
      * Options are frozen after setup, but internal maps are mutable through their proxies.
      */
     const scopeConfig = {
-      options: { ...options }, // User-provided options (will be frozen after hooks)
+      options: { ...scopeOptions }, // User-provided options (will be frozen after hooks)
       _scopeMethods: new Map(Object.entries(scopeMethods)),
       _vars: new Map(Object.entries(vars)),
       _helpers: new Map(Object.entries(helpers))
@@ -1783,8 +1782,7 @@ async _addScope(name, options = {}, extras = {}) {
     // This context contains proxies for vars/helpers and basic info.
     const informationalScopeContext = {
         scopeName: name, // Main piece of info
-        scopeOptions: { ...options }, // Immutable copy of initial options
-        scopeExtras: { ...extras },   // Immutable copy of initial extras (for informational purposes)
+        scopeOptions: { ...scopeOptions }, // Immutable copy of initial options
         vars: scopeConfig._varsProxy,    // Proxy for current scope vars (can be mutated via proxy methods)
         helpers: scopeConfig._helpersProxy, // Proxy for current scope helpers (can be mutated via proxy methods)
         // Note: Direct access to _vars, _helpers, _scopeMethods Maps is intentionally NOT provided here,
@@ -1799,7 +1797,7 @@ async _addScope(name, options = {}, extras = {}) {
     scopeConfig.options = Object.freeze(scopeConfig.options);
 
     /**
-     * Process scope-specific hooks defined in `extras.hooks`.
+     * Process scope-specific hooks defined in options.
      * This needs to be done *after* the scope is added to `this._scopes`
      * so that the `_addHook` method can correctly find and attribute them.
      */
@@ -2108,9 +2106,9 @@ async _addScope(name, options = {}, extras = {}) {
           api._logger.trace(`Plugin '${plugin.name}' adding scope method '${method}'`);
           return await api._addScopeMethod(method, handler);
         },
-        addScope: async (name, options, extras) => {
+        addScope: async (name, options) => {
           api._logger.trace(`Plugin '${plugin.name}' adding scope '${name}'`);
-          return await api._addScope(name, options, extras);
+          return await api._addScope(name, options);
         },
         setScopeAlias: (aliasName, addScopeAlias) => {
           api._logger.trace(`Plugin '${plugin.name}' setting scope alias '${aliasName}'`);

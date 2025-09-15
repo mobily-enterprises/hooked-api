@@ -206,7 +206,7 @@ const validated = api.scopes.users.helpers.validateUser(userData);
 const timeout = api.scopes.users.vars.timeout; // Returns 15000 (from global)
 
 // But if the scope defines its own value, that takes precedence
-await api.addScope('products', {}, {
+await api.addScope('products', {
   vars: { timeout: 30000 } // Override for this scope
 });
 api.scopes.products.vars.timeout; // Returns 30000 (scope-specific)
@@ -302,7 +302,7 @@ The object format accepts these properties:
 This same object format works in `addScope`:
 
 ```javascript
-api.addScope('users', {}, {
+api.addScope('users', {
   hooks: {
     beforeSave: {
       handler: async ({ context, helpers }) => {

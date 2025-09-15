@@ -254,7 +254,7 @@ test('Method and scope edge cases', async (t) => {
 
   await t.test('should handle scope methods that throw different error types', async () => {
     const api = new Api({ name: 'test' });
-    await api.addScope('errors', {}, {
+    await api.addScope('errors', {
       scopeMethods: {
         throwString: async () => { throw 'string error'; },
         throwNumber: async () => { throw 42; },
@@ -666,14 +666,14 @@ test('Vars and helpers edge cases', async (t) => {
       vars: { shared: 'api-level' }
     });
 
-    api.addScope('scope1', {}, {
+    api.addScope('scope1', {
       vars: { shared: 'scope1-level' },
       scopeMethods: {
         getShared: async ({ vars }) => vars.shared
       }
     });
 
-    api.addScope('scope2', {}, {
+    api.addScope('scope2', {
       vars: { shared: 'scope2-level' },
       scopeMethods: {
         getShared: async ({ vars }) => vars.shared
@@ -1115,7 +1115,7 @@ test('Integration edge cases', async (t) => {
 
     // Create scopes with inheritance-like behavior
     // addScope takes (name, options, extras) where vars/helpers go in extras
-    api.addScope('base', {}, {
+    api.addScope('base', {
       vars: { type: 'base', shared: 'base-value' },
       helpers: {
         format: (data) => `[${data.type}] ${data.value}`
@@ -1127,7 +1127,7 @@ test('Integration edge cases', async (t) => {
       }
     });
 
-    api.addScope('derived', {}, {
+    api.addScope('derived', {
       vars: { type: 'derived', shared: 'base-value' },
       helpers: {
         format: (data) => `[${data.type}] ${data.value}`
@@ -1147,7 +1147,7 @@ test('Integration edge cases', async (t) => {
   await t.test('should handle cross-scope communication', async () => {
     const api = new Api({ name: 'test' });
     
-    api.addScope('sender', {}, {
+    api.addScope('sender', {
       scopeMethods: {
         send: async ({ params, scopes }) => {
           // Communicate with receiver scope
@@ -1160,8 +1160,7 @@ test('Integration edge cases', async (t) => {
     });
 
     api.addScope('receiver', {
-      messages: []
-    }, {
+      messages: [],
       scopeMethods: {
         receive: async ({ vars, params }) => {
           // Vars from scope options are frozen, can't modify
@@ -1274,7 +1273,7 @@ test('Concurrency edge cases', async (t) => {
     const api = new Api({ name: 'test' });
     
     // Use a mutable container since vars are frozen
-    api.addScope('counter', {}, {
+    api.addScope('counter', {
       vars: { state: { count: 0 } }, // Mutable container
       scopeMethods: {
         increment: async ({ vars }) => {

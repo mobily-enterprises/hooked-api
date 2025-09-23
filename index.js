@@ -1281,14 +1281,14 @@ export class Api {
         
         /**
          * Execute hook with error handling
-         * - False return value stops the chain
+         * - False return value stops the chain (successfully)
          * - Exceptions propagate and stop execution
          * - All other returns continue the chain
          */
         try {
           const result = await handler(handlerParams);
           const duration = Date.now() - startTime;
-          
+
           if (result === false) {
             this._logger.debug(`Hook handler '${functionName}' stopped chain`, { plugin: pluginName, hook: name, duration: `${duration}ms` });
             allSuccessful = false;
@@ -1298,11 +1298,11 @@ export class Api {
           }
         } catch (error) {
           const duration = Date.now() - startTime;
-          this._logger.error(`Hook handler '${functionName}' failed`, { 
-            plugin: pluginName, 
-            hook: name, 
-            error: error.message, 
-            duration: `${duration}ms` 
+          this._logger.error(`Hook handler '${functionName}' failed`, {
+            plugin: pluginName,
+            hook: name,
+            error: error.message,
+            duration: `${duration}ms`
           });
           throw error; // Propagate error to method caller
         }
@@ -2056,6 +2056,25 @@ async _addScope(name, options = {}) {
     }
     
     for (const depName of dependencies) {
+      if (typeof depName === 'string' && depName.includes('|')) {
+        const alternatives = depName.split('|').map((name) => name.trim()).filter(Boolean);
+        const satisfied = alternatives.some((name) => this._installedPlugins.has(name));
+        if (!satisfied) {
+          const installedPlugins = Array.from(this._installedPlugins);
+          const suggestion = installedPlugins.length > 0 ? 
+            `Installed plugins: ${installedPlugins.join(', ')}` : 
+            'No plugins are currently installed';
+          throw new PluginError(
+            `Plugin '${plugin.name}' requires one of [${alternatives.join(', ')}] which are not installed. ${suggestion}. Install one of these dependencies first using api.use().`,
+            {
+              pluginName: plugin.name,
+              installedPlugins
+            }
+          );
+        }
+        continue;
+      }
+
       if (!this._installedPlugins.has(depName)) {
         const installedPlugins = Array.from(this._installedPlugins);
         const suggestion = installedPlugins.length > 0 ? 

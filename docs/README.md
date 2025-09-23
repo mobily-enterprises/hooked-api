@@ -314,7 +314,7 @@ api.addScope('users', {
       functionName: 'validateUserEmail',
       beforeFunction: 'sanitizeData'  // Run before another hook
     },
-    
+
     afterSave: {
       handler: ({ context, vars }) => {
         // Send notification
